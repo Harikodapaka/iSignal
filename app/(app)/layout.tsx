@@ -2,9 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { AppShell, Avatar, Box, Group, NavLink, Stack, Text, ThemeIcon, UnstyledButton, rem } from '@mantine/core'
-import { IconHome, IconChartLine, IconLayoutGrid, IconBulb } from '@tabler/icons-react'
+import { ActionIcon, AppShell, Avatar, Box, Group, NavLink, Stack, Text, UnstyledButton, rem } from '@mantine/core'
+import { IconHome, IconChartLine, IconLayoutGrid, IconBulb, IconLogout } from '@tabler/icons-react'
 import { useSession, signOut } from 'next-auth/react'
+import { ThemeSwitcher } from '@/components/ThemeSwitcher'
 
 const NAV = [
   { href: '/today', label: 'Today', Icon: IconHome },
@@ -34,11 +35,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {/* Logo */}
             <Box p="lg" style={{ borderBottom: '1px solid var(--sidebar-border)' }}>
               <Group gap="sm">
-                <ThemeIcon size={36} radius="xl" style={{
-                  background: 'var(--orange)',
-                  boxShadow: '0 4px 12px var(--orange-glow)',
-                  fontStyle: 'italic', fontSize: 19, fontWeight: 800, fontFamily: 'Georgia, serif',
-                }}>i</ThemeIcon>
+                <img src="/favicon.svg" alt="iSignal" style={{ width: 46, height: 46, borderRadius: '50%' }} />
                 <Box>
                   <Text fw={700} size="md" style={{ letterSpacing: '-0.03em', color: 'var(--text-primary)', lineHeight: 1.2 }}>
                     iSignal
@@ -100,19 +97,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Group className="mobile-only" justify="space-between" align="center" px="md" py="xs"
             style={{ borderBottom: '1px solid var(--sidebar-border)', background: 'var(--sidebar-bg)', backdropFilter: 'blur(20px)', position: 'sticky', top: 0, zIndex: 100 }}>
             <Group gap={8}>
-              <ThemeIcon size={28} radius="lg" style={{ background: 'var(--orange)', fontSize: 15, fontStyle: 'italic', fontWeight: 800, fontFamily: 'Georgia, serif' }}>
-                i
-              </ThemeIcon>
+              <img src="/favicon.svg" alt="iSignal" style={{ width: 28, height: 28, borderRadius: '50%' }} />
               <Box>
                 <Text fw={700} size="sm" style={{ letterSpacing: '-0.03em', color: 'var(--text-primary)', lineHeight: 1.1 }}>iSignal</Text>
                 <Text size="xs" style={{ color: 'var(--text-muted)', fontSize: 10 }}>Activity Logger</Text>
               </Box>
             </Group>
-            <Avatar src={session?.user?.image} size={28} radius="xl"
-              style={{ background: 'linear-gradient(135deg, var(--orange), var(--purple))', cursor: 'pointer' }}
-              onClick={() => signOut({ callbackUrl: '/login' })}>
-              {session?.user?.name?.[0] ?? '?'}
-            </Avatar>
+            <Group gap="xs">
+              <ThemeSwitcher />
+              <ActionIcon size="lg"
+                radius="md"
+                aria-label="Logout"
+                style={{ cursor: 'pointer' }}
+                onClick={() => signOut({ callbackUrl: '/login' })}
+                variant='outline'
+              >
+                <IconLogout size={18} />
+              </ActionIcon>
+            </Group>
           </Group>
 
           <Box className="main-content" style={{ minHeight: '100vh', padding: `${rem(32)} ${rem(36)}`, maxWidth: 1160, margin: '0 auto' }}>

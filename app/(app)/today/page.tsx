@@ -25,8 +25,8 @@ function ActivityRings({ streak, score, consistency }: { streak: number; score: 
   const trackColors = ['var(--red-tint)', 'var(--green-tint)', 'var(--blue-tint)']
   const values = [Math.min((streak / 30) * 100, 100), score, consistency]
   const labels = [
-    { val: streak, unit: 'days',  label: 'Streak',      color: 'var(--red)' },
-    { val: score,  unit: '/100',  label: 'Score',       color: 'var(--green)' },
+    { val: streak, unit: 'days', label: 'Streak', color: 'var(--red)' },
+    { val: score, unit: '/100', label: 'Score', color: 'var(--green)' },
     { val: `${Math.round(consistency)}%`, unit: '', label: 'Today', color: 'var(--blue)' },
   ]
 
@@ -37,7 +37,7 @@ function ActivityRings({ streak, score, consistency }: { streak: number; score: 
         <svg width="140" height="140" viewBox="0 0 140 140" style={{ transform: 'rotate(-90deg)' }}>
           {r.map((radius, i) => {
             const circ = 2 * Math.PI * radius
-            const pct  = Math.max(values[i], 2)
+            const pct = Math.max(values[i], 2)
             return (
               <g key={i}>
                 <circle cx="70" cy="70" r={radius} fill="none" stroke={trackColors[i]} strokeWidth="10" />
@@ -81,11 +81,11 @@ export default function TodayPage() {
 
   const handleLogged = useCallback(() => { refetchA(); refetchE() }, [refetchA, refetchE])
 
-  const bestStreak   = getBestStreak(analytics)
-  const weeklyScore  = getWeeklyScore(analytics)
-  const loggedToday  = getLoggedToday(analytics)
-  const totalPinned  = analytics.length
-  const consistency  = totalPinned > 0 ? (loggedToday / totalPinned) * 100 : 0
+  const bestStreak = getBestStreak(analytics)
+  const weeklyScore = getWeeklyScore(analytics)
+  const loggedToday = getLoggedToday(analytics)
+  const totalPinned = analytics.length
+  const consistency = totalPinned > 0 ? (loggedToday / totalPinned) * 100 : 0
 
   return (
     <Stack gap="xl">
@@ -139,7 +139,7 @@ export default function TodayPage() {
       {/* Pinned metric cards */}
       {loadingA ? (
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
-          {[1,2,3,4].map(i => <Skeleton key={i} height={180} radius="xl" />)}
+          {[1, 2, 3, 4].map(i => <Skeleton key={i} height={180} radius="xl" />)}
         </SimpleGrid>
       ) : analytics.length > 0 ? (
         <Box className="fade-in fade-in-3">
