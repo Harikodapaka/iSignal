@@ -46,7 +46,7 @@ export async function POST() {
       }
     })
 
-    const summary = await aiWeeklySummary(weeklyData)
+    const summary = await aiWeeklySummary(weeklyData, userId)
     if (!summary) {
       return NextResponse.json(
         { success: false, error: 'AI unavailable — try again shortly' },

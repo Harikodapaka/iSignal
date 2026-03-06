@@ -24,7 +24,8 @@
     "mongodb": "^6.0.0",
     "zod": "^3.0.0",
     "dayjs": "^1.11.0",
-    "recharts": "^2.15.0"
+    "recharts": "^2.15.0",
+    "@vercel/functions": "^2.0.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

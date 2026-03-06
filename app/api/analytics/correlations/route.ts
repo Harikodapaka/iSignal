@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({ events: [] }))
-    const correlations = await aiCorrelations(body.events ?? [])
+    const correlations = await aiCorrelations(body.events ?? [], userId)
 
     return NextResponse.json({ success: true, data: correlations })
   } catch (err) {

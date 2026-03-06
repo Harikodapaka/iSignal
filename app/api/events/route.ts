@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { z } from 'zod'
 import { auth } from '@/auth'
 import { connectDB } from '@/lib/mongodb'
 import { cache } from '@/lib/cache'
 import { parseLogInput, getMetricDisplayName, getTodayString, findMetric, KNOWN_METRICS } from '@/lib/parser'
-import { aiResolveAlias, aiExtractMetrics, aiExtractContext, getUserMetricKeys } from '@/lib/ai'
+import { aiResolveAlias, aiExtractMetrics, getUserMetricKeys } from '@/lib/ai'
 import EventModel from '@/models/Event'
 import MetricModel from '@/models/Metric'
 import AliasModel from '@/models/Alias'
@@ -56,7 +57,6 @@ export async function POST(req: NextRequest) {
 
     const userId = session.user.id
 
-    // Rate limit: 60 logs per minute
     const rl = await cache.checkRateLimit(userId, 'events', 60, 60)
     if (!rl.allowed) {
       return NextResponse.json<ApiResponse<null>>(
@@ -82,7 +82,6 @@ export async function POST(req: NextRequest) {
     const { rawText } = validated.data
     await connectDB()
 
-    // ── Parse input ───────────────────────────────────────────────────────────
     const parsed = parseLogInput(rawText)
     if (!parsed) {
       return NextResponse.json<ApiResponse<null>>(
@@ -90,7 +89,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // ── Fast path alias resolution (cache → DB, no AI blocking) ──────────────
+    // ── Fast path alias resolution (cache → DB, no AI) ────────────────────────
     const aliasCacheKey = `alias:${userId}:${parsed.metricKey}`
     let resolvedKey = parsed.metricKey
 
@@ -112,11 +111,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Save event immediately — never block on AI ────────────────────────────
-    const now = new Date()
+    // ── Save event immediately ────────────────────────────────────────────────
     const event = await EventModel.create({
       userId,
-      timestamp: now.toISOString(),
+      timestamp: new Date().toISOString(),
       date: getTodayString(),
       rawText,
       metricKey: resolvedKey,
@@ -125,7 +123,6 @@ export async function POST(req: NextRequest) {
       unit: parsed.unit,
     })
 
-    // ── Upsert metric + increment frequency ───────────────────────────────────
     const known = findMetric(resolvedKey)
     const isNewMetric = !(await MetricModel.exists({ userId, metricKey: resolvedKey }))
 
@@ -143,35 +140,45 @@ export async function POST(req: NextRequest) {
       { upsert: true, new: true }
     )
 
-    // Auto-pin at frequency 3
     await MetricModel.findOneAndUpdate(
       { userId, metricKey: resolvedKey, frequencyScore: { $gte: 3 }, pinned: false },
       { $set: { pinned: true } }
     )
 
-    // ── Invalidate caches ─────────────────────────────────────────────────────
     await cache.del(`analytics:${userId}:${resolvedKey}`)
     await cache.del(`metrics:pinned:${userId}`)
+    if (isNewMetric) await cache.invalidateMetricKeys(userId)
 
-    // If this is a brand-new metric key, the cached keys list is stale
-    if (isNewMetric) {
-      await cache.invalidateMetricKeys(userId)
-    }
-
-    // ── Background AI — fire-and-forget, never blocking ───────────────────────
+    // ── Background AI — only when parser couldn't resolve the key ─────────────
+    // Rules:
+    //   sentence + unknown key → aiExtractMetrics (1 call, fixes the key)
+    //   short unknown token    → aiResolveAlias   (1 call, alias lookup)
+    //   known key (any length) → NO AI call at all
+    //
+    // This means a user logging "workout 45" or "sleep 7.5" never hits Gemini.
+    // AI only fires when the parser genuinely couldn't identify the metric.
 
     const isSentence = rawText.trim().split(/\s+/).length > 3
     const isUnknown = !known && !cachedAlias
 
-    if (isSentence) {
-      // Sentence input: attempt full metric extraction, then context annotation
-      triggerMetricExtraction(String(event._id), rawText, resolvedKey, userId).catch(() => { })
-    } else if (isUnknown) {
-      // Short but unrecognised token: attempt alias resolution only
-      triggerAIResolution(parsed.metricKey, userId).catch(() => { })
+    if (isUnknown) {
+      if (isSentence) {
+        console.log(`[events] unknown sentence, scheduling extraction: "${rawText}"`)
+        waitUntil(
+          triggerMetricExtraction(String(event._id), rawText, resolvedKey, userId)
+            .catch(err => console.error('[events] triggerMetricExtraction failed:', err))
+        )
+      } else {
+        console.log(`[events] unknown token "${resolvedKey}", scheduling alias resolution`)
+        waitUntil(
+          triggerAIResolution(parsed.metricKey, userId)
+            .catch(err => console.error('[events] triggerAIResolution failed:', err))
+        )
+      }
+    } else {
+      console.log(`[events] known metric "${resolvedKey}" — skipping AI`)
     }
 
-    const eventObj = event.toObject() as any
     return NextResponse.json<ApiResponse<IEvent>>(
       { success: true, data: event.toObject() as unknown as IEvent },
       { status: 201 }
@@ -185,39 +192,34 @@ export async function POST(req: NextRequest) {
 }
 
 // ── triggerAIResolution ───────────────────────────────────────────────────────
-// For short unknown tokens (e.g. "deepwork", "nap").
-// Uses cache-first getUserMetricKeys — no DB query if keys are warm.
-
 async function triggerAIResolution(rawKey: string, userId: string) {
   const existingKeys = await getUserMetricKeys(userId)
   if (!existingKeys.length) return
 
-  const result = await aiResolveAlias(rawKey, existingKeys)
+  const result = await aiResolveAlias(rawKey, existingKeys, userId)
   if (!result.match) return
 
   if (result.confidence >= 0.85) {
-    // High confidence — auto-create alias, no user prompt needed
     await AliasModel.findOneAndUpdate(
       { rawKey: rawKey.toLowerCase(), userId: null },
       { canonicalKey: result.match, createdBy: 'ai', confidence: result.confidence },
       { upsert: true }
     )
+    console.log(`[AI] auto-alias: "${rawKey}" → "${result.match}" (${result.confidence})`)
   } else if (result.confidence >= 0.5) {
-    // Medium confidence — queue for user confirmation ("did you mean X?")
     await PendingAliasModel.findOneAndUpdate(
       { rawKey, userId, status: 'pending' },
       { suggestedKey: result.match, confidence: result.confidence, status: 'pending' },
       { upsert: true }
     )
+    console.log(`[AI] pending alias: "${rawKey}" → "${result.match}" (${result.confidence})`)
   }
-  // < 0.5 — genuinely new concept, do nothing
 }
 
 // ── triggerMetricExtraction ───────────────────────────────────────────────────
-// For sentence inputs (e.g. "I went to bed and sleept 7h").
-// Step 1: ask Gemini to extract the correct metricKey + value from the sentence.
-// Step 2: if Gemini finds a better key, patch the saved event + metric.
-// Step 3: also extract sentiment/tags regardless.
+// Only called when metric key was unknown — 1 Gemini call max.
+// Context annotation (sentiment/tags) removed — not displayed in UI yet,
+// not worth burning rate limit budget on.
 
 async function triggerMetricExtraction(
   eventId: string,
@@ -225,57 +227,45 @@ async function triggerMetricExtraction(
   currentMetricKey: string,
   userId: string,
 ) {
-  // Step 1 — AI metric extraction (uses cached keys internally)
+  console.log(`[AI] triggerMetricExtraction: "${rawText}"`)
+
   const extracted = await aiExtractMetrics(rawText, userId)
+  if (!extracted.length) return
 
-  if (extracted.length > 0) {
-    const best = extracted.reduce((a, b) => a.confidence > b.confidence ? a : b)
+  const best = extracted.reduce((a, b) => a.confidence > b.confidence ? a : b)
+  if (best.confidence < 0.7 || best.metricKey === currentMetricKey) return
 
-    // Only patch if Gemini is confident and found a different/better key
-    if (best.confidence >= 0.7 && best.metricKey !== currentMetricKey) {
-      const known = KNOWN_METRICS.find(m => m.key === best.metricKey)
+  console.log(`[AI] correcting: "${currentMetricKey}" → "${best.metricKey}" (${best.confidence})`)
 
-      // Patch the event
-      await EventModel.findByIdAndUpdate(eventId, {
-        $set: {
-          metricKey: best.metricKey,
-          ...(best.value !== null ? { value: best.value } : {}),
-          ...(best.unit !== null ? { unit: best.unit } : {}),
-        },
-      })
+  const known = KNOWN_METRICS.find(m => m.key === best.metricKey)
 
-      // Ensure the corrected metric exists
-      await MetricModel.findOneAndUpdate(
-        { userId, metricKey: best.metricKey },
-        {
-          $setOnInsert: {
-            displayName: known?.displayName ?? getMetricDisplayName(best.metricKey),
-            valueType: best.value !== null ? 'number' : 'boolean',
-            unit: best.unit,
-            pinned: false,
-          },
-          $inc: { frequencyScore: 1 },
-        },
-        { upsert: true, new: true }
-      )
+  await EventModel.findByIdAndUpdate(eventId, {
+    $set: {
+      metricKey: best.metricKey,
+      ...(best.value !== null ? { value: best.value } : {}),
+      ...(best.unit !== null ? { unit: best.unit } : {}),
+    },
+  })
 
-      // Cache the alias so the next typo resolves instantly without AI
-      await AliasModel.findOneAndUpdate(
-        { rawKey: currentMetricKey.toLowerCase(), userId: null },
-        { canonicalKey: best.metricKey, createdBy: 'ai', confidence: best.confidence },
-        { upsert: true }
-      )
+  await MetricModel.findOneAndUpdate(
+    { userId, metricKey: best.metricKey },
+    {
+      $setOnInsert: {
+        displayName: known?.displayName ?? getMetricDisplayName(best.metricKey),
+        valueType: best.value !== null ? 'number' : 'boolean',
+        unit: best.unit,
+        pinned: false,
+      },
+      $inc: { frequencyScore: 1 },
+    },
+    { upsert: true, new: true }
+  )
 
-      // Invalidate keys cache — we may have added a new metric
-      await cache.invalidateMetricKeys(userId)
-    }
-  }
+  await AliasModel.findOneAndUpdate(
+    { rawKey: currentMetricKey.toLowerCase(), userId: null },
+    { canonicalKey: best.metricKey, createdBy: 'ai', confidence: best.confidence },
+    { upsert: true }
+  )
 
-  // Step 2 — Context annotation (sentiment + tags) regardless of key correction
-  const ctx = await aiExtractContext(rawText, currentMetricKey)
-  if (ctx.sentiment !== 'neutral' || ctx.tags.length || ctx.note) {
-    await EventModel.findByIdAndUpdate(eventId, {
-      $set: { sentiment: ctx.sentiment, tags: ctx.tags, note: ctx.note },
-    })
-  }
+  await cache.invalidateMetricKeys(userId)
 }
