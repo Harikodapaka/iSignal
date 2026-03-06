@@ -35,9 +35,12 @@ export async function GET(req: NextRequest) {
       .maxTimeMS(5000)
       .lean()
 
-    await cache.set(cacheKey, metrics, pinnedOnly ? 300 : 120)
+    const formatted = (metrics as any[]).map(m => ({
+      ...m,
+      _id: m._id?.toString(),
+    }))
 
-    return NextResponse.json<ApiResponse<IMetric[]>>({ success: true, data: metrics as IMetric[] })
+    return NextResponse.json<ApiResponse<IMetric[]>>({ success: true, data: metrics as unknown as IMetric[] })
   } catch (err) {
     console.error('GET /api/metrics error:', err)
     return NextResponse.json<ApiResponse<null>>(
@@ -93,7 +96,7 @@ export async function PATCH(req: NextRequest) {
     await cache.del(`metrics:pinned:${userId}`)
     await cache.del(`metrics:all:${userId}`)
 
-    return NextResponse.json<ApiResponse<IMetric>>({ success: true, data: metric.toObject() as IMetric })
+    return NextResponse.json<ApiResponse<IMetric>>({ success: true, data: metric.toObject() as unknown as IMetric })
   } catch (err) {
     console.error('PATCH /api/metrics error:', err)
     return NextResponse.json<ApiResponse<null>>(

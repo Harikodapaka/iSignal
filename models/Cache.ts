@@ -9,17 +9,17 @@ export interface ICacheDocument extends Document {
 
 const CacheSchema = new Schema<ICacheDocument>(
   {
-    key:       { type: String, required: true, unique: true },
-    value:     { type: String, default: '0' },
-    count:     { type: Number, default: 0 },
+    key: { type: String, required: true, unique: true }, // unique: true creates the index
+    value: { type: String, default: '0' },
+    count: { type: Number, default: 0 },
     expiresAt: { type: Date, required: true },
   },
   { timestamps: true }
 )
 
-// MongoDB auto-deletes expired documents
+// TTL index — MongoDB auto-deletes expired documents
 CacheSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
-CacheSchema.index({ key: 1 }, { unique: true })
+// Note: no explicit index on { key: 1 } — the unique: true above already creates it
 
 const CacheModel: Model<ICacheDocument> =
   mongoose.models.Cache ?? mongoose.model<ICacheDocument>('Cache', CacheSchema)

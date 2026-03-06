@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
       .maxTimeMS(5000)
       .lean()
 
-    return NextResponse.json<ApiResponse<IEvent[]>>({ success: true, data: events as IEvent[] })
+    return NextResponse.json<ApiResponse<IEvent[]>>({ success: true, data: events as unknown as IEvent[] })
   } catch (err) {
     console.error('GET /api/events error:', err)
     return NextResponse.json<ApiResponse<null>>(
@@ -171,8 +171,9 @@ export async function POST(req: NextRequest) {
       triggerAIResolution(parsed.metricKey, userId).catch(() => { })
     }
 
+    const eventObj = event.toObject() as any
     return NextResponse.json<ApiResponse<IEvent>>(
-      { success: true, data: event.toObject() as IEvent },
+      { success: true, data: event.toObject() as unknown as IEvent },
       { status: 201 }
     )
   } catch (err) {
