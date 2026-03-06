@@ -31,14 +31,8 @@ export default function LoginPage() {
         <Stack align="center" gap="xl">
           {/* Logo */}
           <Stack align="center" gap="xs">
-            <ThemeIcon
-              size={64}
-              radius="xl"
-              style={{ background: 'var(--blue)', fontSize: 32, fontStyle: 'italic', fontWeight: 700 }}
-            >
-              i
-            </ThemeIcon>
-            <Title order={2} style={{ letterSpacing: '-0.04em' }}>iSignal</Title>
+            <img src="/favicon.svg" alt="iSignal" style={{ width: 46, height: 46, borderRadius: '50%' }} />
+            <Title order={2} style={{ letterSpacing: '-0.04em', color: 'white' }}>iSignal</Title>
             <Text c="dimmed" size="sm" ta="center">
               Track anything. Understand everything.
             </Text>
