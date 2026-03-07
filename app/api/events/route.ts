@@ -4,7 +4,8 @@ import { z } from 'zod'
 import { auth } from '@/auth'
 import { connectDB } from '@/lib/mongodb'
 import { cache } from '@/lib/cache'
-import { parseLogInput, getMetricDisplayName, getTodayString, findMetric, KNOWN_METRICS } from '@/lib/parser'
+import { parseLogInput, getMetricDisplayName, findMetric, KNOWN_METRICS } from '@/lib/parser'
+import { toLocalDateString, parseTzParam } from '@/lib/timezone'
 import { aiResolveAlias, aiExtractMetrics, getUserMetricKeys } from '@/lib/ai'
 import EventModel from '@/models/Event'
 import MetricModel from '@/models/Metric'
@@ -14,6 +15,7 @@ import type { ApiResponse, IEvent } from '@/types'
 
 const LogSchema = z.object({
   rawText: z.string().min(1, 'Cannot be empty').max(200, 'Too long').trim(),
+  tz: z.string().max(50).optional(),
 })
 
 // ── GET /api/events?date=YYYY-MM-DD ──────────────────────────────────────────
@@ -28,7 +30,8 @@ export async function GET(req: NextRequest) {
 
     await connectDB()
     const { searchParams } = new URL(req.url)
-    const date = searchParams.get('date') ?? getTodayString()
+    const tz = parseTzParam(searchParams)
+    const date = searchParams.get('date') ?? toLocalDateString(tz)
 
     const events = await EventModel
       .find({ userId: session.user.id, date })
@@ -79,7 +82,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { rawText } = validated.data
+    const { rawText, tz } = validated.data
     await connectDB()
 
     const parsed = parseLogInput(rawText)
@@ -115,7 +118,7 @@ export async function POST(req: NextRequest) {
     const event = await EventModel.create({
       userId,
       timestamp: new Date().toISOString(),
-      date: getTodayString(),
+      date: toLocalDateString(tz),
       rawText,
       metricKey: resolvedKey,
       value: parsed.value,
@@ -199,14 +202,9 @@ async function triggerAIResolution(rawKey: string, userId: string) {
   const result = await aiResolveAlias(rawKey, existingKeys, userId)
   if (!result.match) return
 
-  if (result.confidence >= 0.85) {
-    await AliasModel.findOneAndUpdate(
-      { rawKey: rawKey.toLowerCase(), userId: null },
-      { canonicalKey: result.match, createdBy: 'ai', confidence: result.confidence },
-      { upsert: true }
-    )
-    console.log(`[AI] auto-alias: "${rawKey}" → "${result.match}" (${result.confidence})`)
-  } else if (result.confidence >= 0.5) {
+  // AI aliases are always user-scoped and always go through pending confirmation.
+  // Global aliases (userId: null) are reserved for human-confirmed mappings only.
+  if (result.confidence >= 0.5) {
     await PendingAliasModel.findOneAndUpdate(
       { rawKey, userId, status: 'pending' },
       { suggestedKey: result.match, confidence: result.confidence, status: 'pending' },
@@ -261,11 +259,21 @@ async function triggerMetricExtraction(
     { upsert: true, new: true }
   )
 
+  // Event is already patched — write alias directly, no confirmation needed.
+  // Next time this rawKey is logged it resolves instantly without AI.
   await AliasModel.findOneAndUpdate(
-    { rawKey: currentMetricKey.toLowerCase(), userId: null },
+    { rawKey: currentMetricKey.toLowerCase(), userId },
     { canonicalKey: best.metricKey, createdBy: 'ai', confidence: best.confidence },
     { upsert: true }
   )
 
-  await cache.invalidateMetricKeys(userId)
+  // Delete the orphan metric if it was only just created (frequencyScore === 1)
+  await MetricModel.deleteOne({ userId, metricKey: currentMetricKey, frequencyScore: { $lte: 1 } })
+
+  await Promise.all([
+    cache.del(`alias:${userId}:${currentMetricKey}`),
+    cache.del(`analytics:${userId}:${currentMetricKey}`),
+    cache.del(`metrics:pinned:${userId}`),
+    cache.invalidateMetricKeys(userId),
+  ])
 }

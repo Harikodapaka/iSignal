@@ -6,6 +6,7 @@ import { cache } from '@/lib/cache'
 import AliasModel from '@/models/Alias'
 import PendingAliasModel from '@/models/PendingAlias'
 import EventModel from '@/models/Event'
+import MetricModel from '@/models/Metric'
 import type { ApiResponse } from '@/types'
 
 // ── GET pending aliases for current user ──
@@ -85,14 +86,38 @@ export async function POST(req: NextRequest) {
         { upsert: true }
       )
 
-      // Retroactively update past events
-      await EventModel.updateMany(
+      // Retroactively repoint all past events
+      const { modifiedCount } = await EventModel.updateMany(
         { userId, metricKey: pending.rawKey },
         { $set: { metricKey: pending.suggestedKey } }
       )
 
-      // Invalidate alias cache
-      await cache.del(`alias:${userId}:${pending.rawKey}`)
+      if (modifiedCount > 0) {
+        // Bump the target metric's frequencyScore by however many events moved
+        await MetricModel.findOneAndUpdate(
+          { userId, metricKey: pending.suggestedKey },
+          { $inc: { frequencyScore: modifiedCount } },
+        )
+
+        // Auto-pin target metric if it now qualifies
+        await MetricModel.findOneAndUpdate(
+          { userId, metricKey: pending.suggestedKey, frequencyScore: { $gte: 3 }, pinned: false },
+          { $set: { pinned: true } }
+        )
+
+        // Delete the orphaned source metric (it has no events anymore)
+        await MetricModel.deleteOne({ userId, metricKey: pending.rawKey })
+      }
+
+      // Invalidate all affected caches
+      await Promise.all([
+        cache.del(`alias:${userId}:${pending.rawKey}`),
+        cache.del(`analytics:${userId}:${pending.rawKey}`),
+        cache.del(`analytics:${userId}:${pending.suggestedKey}`),
+        cache.del(`analytics:${userId}:all`),
+        cache.del(`metrics:pinned:${userId}`),
+        cache.invalidateMetricKeys(userId),
+      ])
     } else {
       // Write negative alias — never suggest again
       await AliasModel.findOneAndUpdate(

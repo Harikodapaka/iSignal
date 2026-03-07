@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { connectDB } from '@/lib/mongodb'
 import { cache } from '@/lib/cache'
-import { getLast7Days, getLast30Days } from '@/lib/parser'
+import { getLastNDays } from '@/lib/timezone'
+import { parseTzParam } from '@/lib/timezone'
 import EventModel from '@/models/Event'
 import MetricModel from '@/models/Metric'
 import type { ApiResponse, IAnalytics } from '@/types'
@@ -35,6 +36,7 @@ export async function GET(req: NextRequest) {
 
     const userId = session.user.id
     const { searchParams } = new URL(req.url)
+    const tz = parseTzParam(searchParams)
     const metricKey = searchParams.get('metric')
 
     // Check cache
@@ -57,9 +59,9 @@ export async function GET(req: NextRequest) {
       .maxTimeMS(5000)
       .lean()
 
-    const today = new Date().toISOString().split('T')[0]
-    const last7 = getLast7Days()
-    const last30 = getLast30Days()
+    const today = getLastNDays(1, tz)[0]
+    const last7 = getLastNDays(7, tz)
+    const last30 = getLastNDays(30, tz)
 
     const analytics: IAnalytics[] = await Promise.all(
       metrics.map(async (metric) => {

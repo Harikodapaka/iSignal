@@ -1,13 +1,13 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { connectDB } from '@/lib/mongodb'
 import { cache } from '@/lib/cache'
 import { aiWeeklySummary } from '@/lib/ai'
-import { getLast7Days } from '@/lib/parser'
+import { getLastNDays, parseTzParam } from '@/lib/timezone'
 import EventModel from '@/models/Event'
 import MetricModel from '@/models/Metric'
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
     const session = await auth()
     if (!session?.user?.id) {
@@ -15,6 +15,9 @@ export async function POST() {
     }
 
     const userId = session.user.id
+    // Summary route is POST with no body params, so we read tz from body
+    const body0 = await req.clone().json().catch(() => ({}))
+    const tz = typeof body0.tz === 'string' ? body0.tz : null
 
     // Rate limit: 3 summaries per hour
     const rl = await cache.checkRateLimit(userId, 'aiSummary', 3, 3600)
@@ -26,7 +29,7 @@ export async function POST() {
     }
 
     await connectDB()
-    const last7 = getLast7Days()
+    const last7 = getLastNDays(7, tz)
 
     const [events, metrics] = await Promise.all([
       EventModel.find({ userId, date: { $in: last7 } }).maxTimeMS(5000).lean(),

@@ -69,10 +69,11 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
     if (!value.trim() || loading) return
     setLoading(true); setOpen(false)
     try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
       const res = await fetch('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawText: value.trim() }),
+        body: JSON.stringify({ rawText: value.trim(), tz }),
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
