@@ -39,5 +39,10 @@ export function useMetrics(pinnedOnly = false) {
     }
   }, [])
 
-  return { metrics, loading, error, refetch, togglePin }
+  // Optimistically update a metric in local state after an edit
+  const updateMetric = useCallback((updated: IMetric) => {
+    setMetrics(prev => prev.map(m => m.metricKey === updated.metricKey ? { ...m, ...updated } : m))
+  }, [])
+
+  return { metrics, loading, error, refetch, togglePin, updateMetric }
 }

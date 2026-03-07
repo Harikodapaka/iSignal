@@ -1,17 +1,22 @@
 'use client'
 
-import { Box, Badge, Group, SimpleGrid, Skeleton, Stack, Switch, Text, ThemeIcon } from '@mantine/core'
+import { useState } from 'react'
+import { Box, Badge, Group, SimpleGrid, Skeleton, Stack, Switch, Text, ThemeIcon, ActionIcon } from '@mantine/core'
+import { IconPencil } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { GlassCard } from '@/components/ui/GlassCard'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { SectionLabel } from '@/components/ui/SectionLabel'
+import { MetricEditDrawer } from '@/components/metrics/MetricEditDrawer'
 import { useMetrics } from '@/hooks/useMetrics'
 import { getMetricColor, getMetricEmoji } from '@/lib/parser'
 import type { IMetric } from '@/types'
 
 export default function MetricsPage() {
-  const { metrics, loading, togglePin } = useMetrics()
-  const pinned   = metrics.filter(m => m.pinned)
+  const { metrics, loading, togglePin, updateMetric } = useMetrics()
+  const [editTarget, setEditTarget] = useState<IMetric | null>(null)
+
+  const pinned = metrics.filter(m => m.pinned)
   const unpinned = metrics.filter(m => !m.pinned)
 
   const handleToggle = async (metricKey: string, pinned: boolean) => {
@@ -31,7 +36,7 @@ export default function MetricsPage() {
 
       {loading ? (
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
-          {[1,2,3,4,5,6].map(i => <Skeleton key={i} height={90} radius="xl" />)}
+          {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} height={90} radius="xl" />)}
         </SimpleGrid>
       ) : metrics.length === 0 ? (
         <GlassCard p="xl" style={{ textAlign: 'center' }}>
@@ -45,7 +50,12 @@ export default function MetricsPage() {
             <Box className="fade-in fade-in-1">
               <SectionLabel>📌 Pinned to Dashboard</SectionLabel>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
-                {pinned.map((m, i) => <MetricRow key={m.metricKey} metric={m} onToggle={handleToggle} delay={i} />)}
+                {pinned.map((m, i) => (
+                  <MetricRow key={m.metricKey} metric={m}
+                    onToggle={handleToggle}
+                    onEdit={() => setEditTarget(m)}
+                    delay={i} />
+                ))}
               </SimpleGrid>
             </Box>
           )}
@@ -53,17 +63,37 @@ export default function MetricsPage() {
             <Box className="fade-in fade-in-2">
               <SectionLabel mt={pinned.length > 0 ? 'md' : undefined}>All Metrics</SectionLabel>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
-                {unpinned.map((m, i) => <MetricRow key={m.metricKey} metric={m} onToggle={handleToggle} delay={i} />)}
+                {unpinned.map((m, i) => (
+                  <MetricRow key={m.metricKey} metric={m}
+                    onToggle={handleToggle}
+                    onEdit={() => setEditTarget(m)}
+                    delay={i} />
+                ))}
               </SimpleGrid>
             </Box>
           )}
         </>
       )}
+
+      <MetricEditDrawer
+        metric={editTarget}
+        opened={!!editTarget}
+        onClose={() => setEditTarget(null)}
+        onSaved={(updated) => {
+          updateMetric(updated)
+          setEditTarget(null)
+        }}
+      />
     </Stack>
   )
 }
 
-function MetricRow({ metric, onToggle, delay }: { metric: IMetric; onToggle: (k: string, p: boolean) => void; delay: number }) {
+function MetricRow({ metric, onToggle, onEdit, delay }: {
+  metric: IMetric
+  onToggle: (k: string, p: boolean) => void
+  onEdit: () => void
+  delay: number
+}) {
   const color = getMetricColor(metric.metricKey)
   const emoji = getMetricEmoji(metric.metricKey)
   return (
@@ -79,12 +109,21 @@ function MetricRow({ metric, onToggle, delay }: { metric: IMetric; onToggle: (k:
             <Group gap={5} mt={3} style={{ flexWrap: 'nowrap' }}>
               <Badge size="xs" variant="light" color="gray" radius="sm">{metric.valueType}</Badge>
               {metric.unit && <Badge size="xs" variant="outline" color="blue" radius="sm">{metric.unit}</Badge>}
+              {metric.aggregation && metric.valueType === 'number' && (
+                <Badge size="xs" variant="outline" color="violet" radius="sm">{metric.aggregation}</Badge>
+              )}
               <Text size="xs" style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{metric.frequencyScore}× logged</Text>
             </Group>
           </Box>
         </Group>
-        <Switch checked={metric.pinned} onChange={e => onToggle(metric.metricKey, e.currentTarget.checked)}
-          color="orange" size="sm" style={{ flexShrink: 0 }} />
+        <Group gap="xs" style={{ flexShrink: 0 }}>
+          <ActionIcon variant="subtle" size="sm" radius="xl" onClick={onEdit}
+            style={{ color: 'var(--text-muted)' }}>
+            <IconPencil size={14} />
+          </ActionIcon>
+          <Switch checked={metric.pinned} onChange={e => onToggle(metric.metricKey, e.currentTarget.checked)}
+            color="orange" size="sm" />
+        </Group>
       </Group>
     </GlassCard>
   )

@@ -7,7 +7,9 @@ function getLocalTz(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone
 }
 
-export function useAnalytics(metricKey?: string) {
+export type AnalyticsRange = '7d' | '30d' | '3mo'
+
+export function useAnalytics(metricKey?: string, range: AnalyticsRange = '7d') {
   const [analytics, setAnalytics] = useState<IAnalytics[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -17,7 +19,7 @@ export function useAnalytics(metricKey?: string) {
     setError(null)
     try {
       const tz = getLocalTz()
-      const params = new URLSearchParams({ tz })
+      const params = new URLSearchParams({ tz, range })
       if (metricKey) params.set('metric', metricKey)
       const res = await fetch(`/api/analytics?${params}`)
       const data = await res.json()
@@ -25,7 +27,7 @@ export function useAnalytics(metricKey?: string) {
       else setError(data.error ?? 'Failed')
     } catch { setError('Network error') }
     finally { setLoading(false) }
-  }, [metricKey])
+  }, [metricKey, range])
 
   useEffect(() => { refetch() }, [refetch])
   return { analytics, loading, error, refetch }

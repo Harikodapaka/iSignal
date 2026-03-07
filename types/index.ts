@@ -33,6 +33,7 @@ export interface IMetric {
   displayName: string
   valueType: ValueType
   unit?: string
+  aggregation?: 'sum' | 'avg' | 'last'
   pinned: boolean
   frequencyScore: number
   createdAt?: string
@@ -74,8 +75,11 @@ export interface IAnalytics {
   trend?: 'up' | 'down' | 'flat'
   trendPct?: number
   // Shared
-  last7Days?: { date: string; value: number | boolean | null }[]
+  lastNDays?: { date: string; value: number | boolean | null }[]  // length matches requested range
+  last7Days?: { date: string; value: number | boolean | null }[]  // kept for back-compat
   todayValue?: number | boolean | null
+  rangeAvg?: number   // avg over the requested range (for header stat)
+  rangeDays?: number  // how many days the range covers
 }
 
 export interface LogInputParsed {

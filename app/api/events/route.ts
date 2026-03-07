@@ -19,6 +19,15 @@ const LogSchema = z.object({
 })
 
 // ── GET /api/events?date=YYYY-MM-DD ──────────────────────────────────────────
+// Infer the best aggregation type for a user-created metric.
+// Known metrics have it set explicitly; this covers anything logged on the fly.
+function inferAggregation(valueType: string, unit?: string | null): 'sum' | 'avg' | 'last' {
+  if (valueType === 'boolean') return 'last'
+  if (!unit) return 'avg'          // no unit → likely a score
+  if (unit === '/10') return 'avg' // explicit score scale
+  return 'sum'                     // has a real unit (min, km, g, L, mg, etc.) → additive
+}
+
 export async function GET(req: NextRequest) {
   try {
     const session = await auth()
@@ -85,7 +94,10 @@ export async function POST(req: NextRequest) {
     const { rawText, tz } = validated.data
     await connectDB()
 
-    const parsed = parseLogInput(rawText)
+    // Load user metric keys first so parser can match user-created metrics
+    // (e.g. "watched jurassic park movie" → "watched movie")
+    const userMetricKeys = await getUserMetricKeys(userId)
+    const parsed = parseLogInput(rawText, userMetricKeys)
     if (!parsed) {
       return NextResponse.json<ApiResponse<null>>(
         { success: false, error: 'Could not parse input' }, { status: 400 }
@@ -135,7 +147,8 @@ export async function POST(req: NextRequest) {
         $setOnInsert: {
           displayName: known?.displayName ?? getMetricDisplayName(resolvedKey),
           valueType: parsed.valueType,
-          unit: parsed.unit,
+          unit: parsed.unit ?? known?.unit ?? null,
+          aggregation: known?.aggregation ?? inferAggregation(parsed.valueType, parsed.unit ?? known?.unit),
           pinned: false,
         },
         $inc: { frequencyScore: 1 },
@@ -251,7 +264,7 @@ async function triggerMetricExtraction(
       $setOnInsert: {
         displayName: known?.displayName ?? getMetricDisplayName(best.metricKey),
         valueType: best.value !== null ? 'number' : 'boolean',
-        unit: best.unit,
+        unit: best.unit ?? known?.unit ?? null,
         pinned: false,
       },
       $inc: { frequencyScore: 1 },

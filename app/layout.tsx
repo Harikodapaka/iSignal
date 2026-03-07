@@ -11,7 +11,7 @@ import { Providers } from '@/components/Providers'
 import { ThemeSwitcher } from '@/components/ThemeSwitcher'
 
 export const metadata: Metadata = {
-  title: 'iSignal — Your Health Signal',
+  title: 'iSignal — Activity & Habit Tracker',
   description: 'Track anything. Understand everything.',
   icons: {
     icon: '/favicon.svg',

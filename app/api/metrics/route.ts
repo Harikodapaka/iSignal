@@ -4,6 +4,7 @@ import { auth } from '@/auth'
 import { connectDB } from '@/lib/mongodb'
 import { cache } from '@/lib/cache'
 import MetricModel from '@/models/Metric'
+import { findMetric } from '@/lib/parser'
 import type { ApiResponse, IMetric } from '@/types'
 
 // ── GET /api/metrics?pinned=true ──
@@ -35,12 +36,19 @@ export async function GET(req: NextRequest) {
       .maxTimeMS(5000)
       .lean()
 
-    const formatted = (metrics as any[]).map(m => ({
-      ...m,
-      _id: m._id?.toString(),
-    }))
+    // Backfill unit for any metrics that were created before the unit-fallback fix
+    const patched = metrics.map(m => {
+      if (m.unit != null) return m
+      const known = findMetric(m.metricKey)
+      if (!known?.unit) return m
+      // Write fix to DB async — don't block the response
+      MetricModel.updateOne({ _id: m._id }, { $set: { unit: known.unit } }).catch(() => { })
+      return { ...m, unit: known.unit }
+    })
 
-    return NextResponse.json<ApiResponse<IMetric[]>>({ success: true, data: metrics as unknown as IMetric[] })
+    await cache.set(cacheKey, patched, pinnedOnly ? 300 : 120)
+
+    return NextResponse.json<ApiResponse<IMetric[]>>({ success: true, data: patched as unknown as IMetric[] })
   } catch (err) {
     console.error('GET /api/metrics error:', err)
     return NextResponse.json<ApiResponse<null>>(
@@ -52,10 +60,14 @@ export async function GET(req: NextRequest) {
 
 const PatchSchema = z.object({
   metricKey: z.string().min(1),
-  pinned: z.boolean(),
+  pinned: z.boolean().optional(),
+  displayName: z.string().min(1).max(50).optional(),
+  unit: z.string().max(20).optional().nullable(),
+  aggregation: z.enum(['sum', 'avg', 'last']).optional(),
+  valueType: z.enum(['boolean', 'number', 'text']).optional(),
 })
 
-// ── PATCH /api/metrics — toggle pin ──
+// ── PATCH /api/metrics — update any editable field ──
 export async function PATCH(req: NextRequest) {
   try {
     const session = await auth()
@@ -77,11 +89,19 @@ export async function PATCH(req: NextRequest) {
 
     await connectDB()
     const userId = session.user.id
-    const { metricKey, pinned } = validated.data
+    const { metricKey, ...updates } = validated.data
+
+    // Build $set from whichever fields were provided
+    const $set: Record<string, unknown> = {}
+    if (updates.pinned !== undefined) $set.pinned = updates.pinned
+    if (updates.displayName !== undefined) $set.displayName = updates.displayName
+    if (updates.unit !== undefined) $set.unit = updates.unit
+    if (updates.aggregation !== undefined) $set.aggregation = updates.aggregation
+    if (updates.valueType !== undefined) $set.valueType = updates.valueType
 
     const metric = await MetricModel.findOneAndUpdate(
       { userId, metricKey },
-      { $set: { pinned } },
+      { $set },
       { new: true }
     )
 
@@ -92,9 +112,14 @@ export async function PATCH(req: NextRequest) {
       )
     }
 
-    // Invalidate cache
+    // Invalidate metric + analytics caches
     await cache.del(`metrics:pinned:${userId}`)
     await cache.del(`metrics:all:${userId}`)
+    // Analytics cache must be cleared too if unit/aggregation changed
+    for (const suffix of ['7d', '30d', '3mo']) {
+      await cache.del(`analytics:${userId}:all:${suffix}`)
+      await cache.del(`analytics:${userId}:${metricKey}:${suffix}`)
+    }
 
     return NextResponse.json<ApiResponse<IMetric>>({ success: true, data: metric.toObject() as unknown as IMetric })
   } catch (err) {

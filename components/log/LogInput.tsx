@@ -6,17 +6,33 @@ import { Box, ActionIcon, Loader, Group, Text, Badge, Stack, UnstyledButton } fr
 import { IconBolt, IconArrowUp } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
 import { KNOWN_METRICS, parseLogInput, getMetricDisplayName } from '@/lib/parser'
+import type { IMetric } from '@/types'
 
 interface DropdownPos { top: number; left: number; width: number }
+
+// Unified suggestion shape for both KNOWN_METRICS and user metrics
+interface Suggestion {
+  key: string
+  displayName: string
+  emoji: string
+  type: string
+  unit?: string
+  color: string
+}
+
+function toSuggestion(m: typeof KNOWN_METRICS[number]): Suggestion {
+  return { key: m.key, displayName: m.displayName, emoji: m.emoji, type: m.type, unit: m.unit, color: m.color }
+}
 
 export function LogInput({ onLogged }: { onLogged?: () => void }) {
   const [value, setValue] = useState('')
   const [loading, setLoading] = useState(false)
-  const [suggestions, setSuggestions] = useState<typeof KNOWN_METRICS>([])
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [open, setOpen] = useState(false)
   const [focused, setFocused] = useState(false)
   const [dropPos, setDropPos] = useState<DropdownPos | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [userMetrics, setUserMetrics] = useState<IMetric[]>([])
 
   const wrapRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -24,20 +40,22 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
   // Portal only works client-side
   useEffect(() => { setMounted(true) }, [])
 
+  // Fetch user metrics once on mount for autocomplete + parser hints
+  useEffect(() => {
+    fetch('/api/metrics')
+      .then(r => r.json())
+      .then(d => { if (d.success) setUserMetrics(d.data ?? []) })
+      .catch(() => { })
+  }, [])
+
   // Recalculate dropdown position whenever open state changes or on scroll/resize
   useEffect(() => {
     if (!open || !wrapRef.current) { setDropPos(null); return }
-
     const recalc = () => {
       if (!wrapRef.current) return
       const rect = wrapRef.current.getBoundingClientRect()
-      setDropPos({
-        top: rect.bottom + 8,
-        left: rect.left,
-        width: rect.width,
-      })
+      setDropPos({ top: rect.bottom + 8, left: rect.left, width: rect.width })
     }
-
     recalc()
     window.addEventListener('scroll', recalc, { passive: true })
     window.addEventListener('resize', recalc, { passive: true })
@@ -51,10 +69,29 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
     const parts = input.trim().split(/\s+/)
     const key = parts[0].toLowerCase()
     if (!input.trim() || parts.length > 1) { setSuggestions([]); setOpen(false); return }
-    const hits = KNOWN_METRICS.filter(m => m.key.startsWith(key) && m.key !== key).slice(0, 6)
+
+    // Known metrics that start with the typed key
+    const knownHits = KNOWN_METRICS
+      .filter(m => m.key.startsWith(key) && m.key !== key)
+      .map(toSuggestion)
+
+    // User-created metrics that start with the typed key (not already in knownHits)
+    const knownKeys = new Set(KNOWN_METRICS.map(m => m.key))
+    const userHits: Suggestion[] = userMetrics
+      .filter(m => m.metricKey.startsWith(key) && m.metricKey !== key && !knownKeys.has(m.metricKey))
+      .map(m => ({
+        key: m.metricKey,
+        displayName: m.displayName,
+        emoji: '📊',
+        type: m.valueType,
+        unit: m.unit ?? undefined,
+        color: '#636366',
+      }))
+
+    const hits = [...knownHits, ...userHits].slice(0, 6)
     setSuggestions(hits)
     setOpen(hits.length > 0)
-  }, [])
+  }, [userMetrics])
 
   const handleChange = (val: string) => { setValue(val); updateSuggestions(val) }
 
@@ -77,13 +114,17 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
-      const parsed = parseLogInput(value.trim())
+
+      const userKeys = userMetrics.map(m => m.metricKey)
+      const parsed = parseLogInput(value.trim(), userKeys)
       notifications.show({
         message: `✓  ${getMetricDisplayName(parsed?.metricKey ?? value)} logged`,
         color: 'green', autoClose: 2000,
         styles: { root: { background: 'var(--card-bg)', border: '1px solid var(--green)' } },
       })
       setValue('')
+      // Refresh user metrics so new metrics appear in autocomplete immediately
+      fetch('/api/metrics').then(r => r.json()).then(d => { if (d.success) setUserMetrics(d.data ?? []) }).catch(() => { })
       onLogged?.()
     } catch (err: unknown) {
       notifications.show({

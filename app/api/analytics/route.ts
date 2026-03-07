@@ -6,7 +6,7 @@ import { getLastNDays } from '@/lib/timezone'
 import { parseTzParam } from '@/lib/timezone'
 import EventModel from '@/models/Event'
 import MetricModel from '@/models/Metric'
-import type { ApiResponse, IAnalytics } from '@/types'
+import type { ApiResponse, IAnalytics, IEvent } from '@/types'
 
 function getCurrentStreak(dates: string[], today: string): number {
   const unique = [...new Set(dates)].sort().reverse()
@@ -38,11 +38,13 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const tz = parseTzParam(searchParams)
     const metricKey = searchParams.get('metric')
+    const rangeParam = searchParams.get('range') ?? '7d'
+    const rangeDays = rangeParam === '3mo' ? 90 : rangeParam === '30d' ? 30 : 7
 
     // Check cache
     const cacheKey = metricKey
-      ? `analytics:${userId}:${metricKey}`
-      : `analytics:${userId}:all`
+      ? `analytics:${userId}:${metricKey}:${rangeParam}`
+      : `analytics:${userId}:all:${rangeParam}`
 
     const cached = await cache.get<IAnalytics[]>(cacheKey)
     if (cached) {
@@ -60,22 +62,22 @@ export async function GET(req: NextRequest) {
       .lean()
 
     const today = getLastNDays(1, tz)[0]
-    const last7 = getLastNDays(7, tz)
-    const last30 = getLastNDays(30, tz)
+    const lastN = getLastNDays(rangeDays, tz)   // the requested range
+    const last30 = getLastNDays(30, tz)          // always fetch 30 for streak/monthly stats
 
     const analytics: IAnalytics[] = await Promise.all(
       metrics.map(async (metric) => {
-        const [events7, events30] = await Promise.all([
+        const [eventsN, events30] = await Promise.all([
           EventModel.find({
             userId,
             metricKey: metric.metricKey,
-            date: { $in: last7 },
-          }).maxTimeMS(3000).lean().catch(() => []),
+            date: { $in: lastN },
+          }).maxTimeMS(3000).lean<IEvent[]>().catch(() => [] as IEvent[]),
           EventModel.find({
             userId,
             metricKey: metric.metricKey,
             date: { $in: last30 },
-          }).maxTimeMS(3000).lean().catch(() => []),
+          }).maxTimeMS(3000).lean<IEvent[]>().catch(() => [] as IEvent[]),
         ])
 
         const base: IAnalytics = {
@@ -85,42 +87,67 @@ export async function GET(req: NextRequest) {
           unit: metric.unit,
         }
 
-        // Today's value
-        const todayEvents = events7.filter((e) => e.date === today)
-        base.todayValue = todayEvents.length
-          ? metric.valueType === 'boolean'
-            ? true
-            : Number(todayEvents[todayEvents.length - 1].value)
-          : null
+        // Today's value for boolean metrics (number metrics set it inside their block)
+        const todayEvents = eventsN.filter((e) => e.date === today)
+        if (metric.valueType === 'boolean') {
+          base.todayValue = todayEvents.length ? true : null
+        }
 
         if (metric.valueType === 'boolean') {
-          const days7 = new Set(events7.map((e) => e.date)).size
+          const daysN = new Set(eventsN.map((e) => e.date)).size
           const days30 = new Set(events30.map((e) => e.date)).size
           return {
             ...base,
-            daysCompletedThisWeek: days7,
+            daysCompletedThisWeek: daysN,
             currentStreak: getCurrentStreak(events30.map((e) => e.date), today),
             monthlyCompletionPct: Math.round((days30 / 30) * 100),
-            last7Days: last7.map((date) => ({
+            rangeDays: rangeDays,
+            lastNDays: lastN.map((date) => ({
               date,
-              value: events7.some((e) => e.date === date),
+              value: eventsN.some((e) => e.date === date),
+            })),
+            last7Days: lastN.map((date) => ({  // back-compat alias
+              date,
+              value: eventsN.some((e) => e.date === date),
             })),
           }
         }
 
         if (metric.valueType === 'number') {
-          const nums7 = events7.map((e) => Number(e.value)).filter((v) => !isNaN(v))
-          const nums30 = events30.map((e) => Number(e.value)).filter((v) => !isNaN(v))
-          const avg7 = nums7.length ? nums7.reduce((a, b) => a + b, 0) / nums7.length : 0
-          const avg30 = nums30.length ? nums30.reduce((a, b) => a + b, 0) / nums30.length : 0
+          // Use stored aggregation, or infer from unit if missing (old metrics pre-migration)
+          const agg: 'sum' | 'avg' | 'last' = (metric.aggregation as 'sum' | 'avg' | 'last')
+            ?? (metric.unit === '/10' ? 'avg' : metric.unit ? 'sum' : 'avg')
 
-          // Trend: compare last 3 vs prior 4 days
-          const recent3 = events7.filter((e) => last7.slice(4).includes(e.date))
-          const prior4 = events7.filter((e) => last7.slice(0, 4).includes(e.date))
-          const avgRecent = recent3.length
-            ? recent3.reduce((a, e) => a + Number(e.value), 0) / recent3.length : 0
-          const avgPrior = prior4.length
-            ? prior4.reduce((a, e) => a + Number(e.value), 0) / prior4.length : 0
+          // Collapse multiple same-day events into one daily value per aggregation type
+          function dailyValue(events: typeof eventsN, date: string): number | null {
+            const dayEvents = events.filter((e) => e.date === date)
+            if (!dayEvents.length) return null
+            const vals = dayEvents.map((e) => Number(e.value)).filter((v) => !isNaN(v))
+            if (!vals.length) return null
+            if (agg === 'sum') return vals.reduce((a, b) => a + b, 0)
+            if (agg === 'last') return vals[vals.length - 1]
+            return vals.reduce((a, b) => a + b, 0) / vals.length  // avg
+          }
+
+          // Build per-day values for N and 30 days
+          const dailyN = lastN.map(date => dailyValue(eventsN, date))
+          const daily30 = last30.map(date => dailyValue(events30, date))
+
+          const presentN = dailyN.filter((v): v is number => v !== null)
+          const present30 = daily30.filter((v): v is number => v !== null)
+
+          const avgN = presentN.length ? presentN.reduce((a, b) => a + b, 0) / presentN.length : 0
+          const avg30 = present30.length ? present30.reduce((a, b) => a + b, 0) / present30.length : 0
+
+          // Today: sum/last/avg of today's events
+          base.todayValue = dailyValue(eventsN, today)
+
+          // Trend: compare last 20% of range vs prior 80%
+          const splitAt = Math.floor(dailyN.length * 0.7)
+          const recent3vals = dailyN.slice(splitAt).filter((v): v is number => v !== null)
+          const prior4vals = dailyN.slice(0, splitAt).filter((v): v is number => v !== null)
+          const avgRecent = recent3vals.length ? recent3vals.reduce((a, b) => a + b, 0) / recent3vals.length : 0
+          const avgPrior = prior4vals.length ? prior4vals.reduce((a, b) => a + b, 0) / prior4vals.length : 0
 
           let trend: 'up' | 'down' | 'flat' = 'flat'
           let trendPct = 0
@@ -132,17 +159,14 @@ export async function GET(req: NextRequest) {
 
           return {
             ...base,
-            sevenDayAvg: Math.round(avg7 * 10) / 10,
+            sevenDayAvg: Math.round(avgN * 10) / 10,  // now reflects the selected range
             monthlyAvg: Math.round(avg30 * 10) / 10,
+            rangeAvg: Math.round(avgN * 10) / 10,
+            rangeDays: rangeDays,
             trend,
             trendPct: Math.abs(trendPct),
-            last7Days: last7.map((date) => {
-              const dayEvents = events7.filter((e) => e.date === date)
-              const val = dayEvents.length
-                ? dayEvents.reduce((a, e) => a + Number(e.value), 0) / dayEvents.length
-                : null
-              return { date, value: val }
-            }),
+            lastNDays: lastN.map((date, idx) => ({ date, value: dailyN[idx] })),
+            last7Days: lastN.map((date, idx) => ({ date, value: dailyN[idx] })),  // back-compat
           }
         }
 
