@@ -1,67 +1,67 @@
 /* ── LIGHT MODE (default) ── */
 :root {
-  --bg: #F2F2F7;
-  --card-bg: #FFFFFF;
+  --bg: #f2f2f7;
+  --card-bg: #ffffff;
   --card-border: rgba(0, 0, 0, 0.08);
   --card-shadow: 0 2px 16px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
-  --sidebar-bg: #FFFFFF;
+  --sidebar-bg: #ffffff;
   --sidebar-border: rgba(0, 0, 0, 0.08);
-  --text-primary: #1C1C1E;
-  --text-secondary: #48484A;
-  --text-muted: #8E8E93;
-  --text-faint: #AEAEB2;
+  --text-primary: #1c1c1e;
+  --text-secondary: #48484a;
+  --text-muted: #8e8e93;
+  --text-faint: #aeaeb2;
   --sep: rgba(0, 0, 0, 0.07);
   --sep2: rgba(0, 0, 0, 0.11);
-  --input-bg: #FFFFFF;
+  --input-bg: #ffffff;
   --input-border: rgba(0, 0, 0, 0.14);
 
-  --orange: #FF6B00;
-  --orange-light: #FF8C38;
+  --orange: #ff6b00;
+  --orange-light: #ff8c38;
   --orange-glow: rgba(255, 107, 0, 0.18);
   --orange-tint: rgba(255, 107, 0, 0.08);
-  --blue: #007AFF;
+  --blue: #007aff;
   --blue-tint: rgba(0, 122, 255, 0.08);
-  --green: #34C759;
-  --green-tint: rgba(52, 199, 89, 0.10);
-  --red: #FF3B30;
-  --red-tint: rgba(255, 59, 48, 0.10);
-  --purple: #AF52DE;
-  --purple-tint: rgba(175, 82, 222, 0.10);
-  --teal: #32ADE6;
-  --yellow: #FFD60A;
+  --green: #34c759;
+  --green-tint: rgba(52, 199, 89, 0.1);
+  --red: #ff3b30;
+  --red-tint: rgba(255, 59, 48, 0.1);
+  --purple: #af52de;
+  --purple-tint: rgba(175, 82, 222, 0.1);
+  --teal: #32ade6;
+  --yellow: #ffd60a;
 }
 
 /* ── DARK MODE ── */
 [data-mantine-color-scheme='dark'] {
   --bg: #000000;
-  --card-bg: #1C1C1E;
+  --card-bg: #1c1c1e;
   --card-border: rgba(255, 255, 255, 0.09);
   --card-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
   --sidebar-bg: rgba(12, 12, 14, 0.97);
   --sidebar-border: rgba(255, 255, 255, 0.07);
-  --text-primary: #FFFFFF;
+  --text-primary: #ffffff;
   --text-secondary: rgba(255, 255, 255, 0.78);
   --text-muted: rgba(255, 255, 255, 0.45);
   --text-faint: rgba(255, 255, 255, 0.22);
   --sep: rgba(255, 255, 255, 0.07);
   --sep2: rgba(255, 255, 255, 0.12);
-  --input-bg: #2C2C2E;
+  --input-bg: #2c2c2e;
   --input-border: rgba(255, 255, 255, 0.14);
 
-  --orange: #FF6B00;
-  --orange-light: #FF8C38;
+  --orange: #ff6b00;
+  --orange-light: #ff8c38;
   --orange-glow: rgba(255, 107, 0, 0.22);
   --orange-tint: rgba(255, 107, 0, 0.13);
-  --blue: #007AFF;
+  --blue: #007aff;
   --blue-tint: rgba(0, 122, 255, 0.13);
-  --green: #34C759;
+  --green: #34c759;
   --green-tint: rgba(52, 199, 89, 0.13);
-  --red: #FF3B30;
+  --red: #ff3b30;
   --red-tint: rgba(255, 59, 48, 0.13);
-  --purple: #AF52DE;
+  --purple: #af52de;
   --purple-tint: rgba(175, 82, 222, 0.13);
-  --teal: #32ADE6;
-  --yellow: #FFD60A;
+  --teal: #32ade6;
+  --yellow: #ffd60a;
 }
 
 /* ── BASE ── */
@@ -105,15 +105,13 @@ body {
   pointer-events: none;
   background:
     radial-gradient(ellipse at 10% 10%, rgba(255, 107, 0, 0.05) 0%, transparent 45%),
-    radial-gradient(ellipse at 90% 80%, rgba(0, 122, 255, 0.04) 0%, transparent 45%),
-    var(--bg);
+    radial-gradient(ellipse at 90% 80%, rgba(0, 122, 255, 0.04) 0%, transparent 45%), var(--bg);
 }
 
 [data-mantine-color-scheme='dark'] .gradient-bg {
   background:
     radial-gradient(ellipse at 10% 10%, rgba(255, 107, 0, 0.08) 0%, transparent 45%),
-    radial-gradient(ellipse at 90% 80%, rgba(0, 122, 255, 0.06) 0%, transparent 45%),
-    #000000;
+    radial-gradient(ellipse at 90% 80%, rgba(0, 122, 255, 0.06) 0%, transparent 45%), #000000;
 }
 
 /* ── ANIMATIONS ── */
@@ -138,7 +136,7 @@ body {
 }
 
 .fade-in-2 {
-  animation-delay: 0.10s;
+  animation-delay: 0.1s;
 }
 
 .fade-in-3 {
@@ -146,7 +144,7 @@ body {
 }
 
 .fade-in-4 {
-  animation-delay: 0.20s;
+  animation-delay: 0.2s;
 }
 
 .fade-in-5 {
@@ -243,7 +241,7 @@ body {
   }
 
   /* Make GlassCard stretch to full width when stat pills wrap */
-  .fade-in-2>div:first-child {
+  .fade-in-2 > div:first-child {
     width: 100% !important;
     flex-basis: 100% !important;
   }

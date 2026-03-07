@@ -1,19 +1,43 @@
-import { createTheme, type MantineColorsTuple } from '@mantine/core'
+import { createTheme, type MantineColorsTuple } from '@mantine/core';
 
 const appleBlue: MantineColorsTuple = [
-  '#e8f0ff', '#d0e2ff', '#a0c2ff', '#6ea0ff', '#4484ff',
-  '#1d6aff', '#007aff', '#0066dd', '#0055bb', '#004499',
-]
+  '#e8f0ff',
+  '#d0e2ff',
+  '#a0c2ff',
+  '#6ea0ff',
+  '#4484ff',
+  '#1d6aff',
+  '#007aff',
+  '#0066dd',
+  '#0055bb',
+  '#004499',
+];
 
 const appleOrange: MantineColorsTuple = [
-  '#fff4ec', '#ffe8d5', '#ffc9a0', '#ffa868', '#ff8c38',
-  '#ff7518', '#ff6b00', '#e05e00', '#c75300', '#ab4500',
-]
+  '#fff4ec',
+  '#ffe8d5',
+  '#ffc9a0',
+  '#ffa868',
+  '#ff8c38',
+  '#ff7518',
+  '#ff6b00',
+  '#e05e00',
+  '#c75300',
+  '#ab4500',
+];
 
 const appleGreen: MantineColorsTuple = [
-  '#e6fbed', '#c8f7d8', '#8eedb0', '#50e285', '#1fd95e',
-  '#00cc4b', '#34c759', '#25a048', '#157d34', '#065c22',
-]
+  '#e6fbed',
+  '#c8f7d8',
+  '#8eedb0',
+  '#50e285',
+  '#1fd95e',
+  '#00cc4b',
+  '#34c759',
+  '#25a048',
+  '#157d34',
+  '#065c22',
+];
 
 export const theme = createTheme({
   fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "DM Sans", "Inter", sans-serif',
@@ -38,4 +62,4 @@ export const theme = createTheme({
     ActionIcon: { defaultProps: { radius: 'xl' } },
     NavLink: { defaultProps: { radius: 'md' } },
   },
-})
+});

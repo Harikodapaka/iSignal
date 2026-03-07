@@ -1,14 +1,14 @@
-import type { Metadata } from 'next'
-import { ColorSchemeScript, MantineProvider } from '@mantine/core'
-import { Notifications } from '@mantine/notifications'
-import '@mantine/core/styles.css'
-import '@mantine/notifications/styles.css'
-import '@mantine/charts/styles.css'
-import '@mantine/dates/styles.css'
-import './globals.css'
-import { theme } from './theme'
-import { Providers } from '@/components/Providers'
-import { ThemeSwitcher } from '@/components/ThemeSwitcher'
+import type { Metadata } from 'next';
+import { ColorSchemeScript, MantineProvider } from '@mantine/core';
+import { Notifications } from '@mantine/notifications';
+import '@mantine/core/styles.css';
+import '@mantine/notifications/styles.css';
+import '@mantine/charts/styles.css';
+import '@mantine/dates/styles.css';
+import './globals.css';
+import { theme } from './theme';
+import { Providers } from '@/components/Providers';
+import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 
 export const metadata: Metadata = {
   title: 'iSignal — Activity & Habit Tracker',
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   icons: {
     icon: '/favicon.svg',
   },
-}
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -29,7 +29,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Providers>
             <Notifications position="top-center" zIndex={9999} />
             <div className="gradient-bg" />
-            <div className="desktop-only" style={{ position: 'fixed', bottom: 16, right: 16, zIndex: 1000 }}>
+            <div
+              className="desktop-only"
+              style={{
+                position: 'fixed',
+                bottom: 16,
+                right: 16,
+                zIndex: 1000,
+              }}
+            >
               <ThemeSwitcher />
             </div>
             {children}
@@ -37,5 +45,5 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </MantineProvider>
       </body>
     </html>
-  )
+  );
 }

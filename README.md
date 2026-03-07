@@ -93,12 +93,12 @@ User types "slept 7.5"
 
 ## AI Features (Gemini Flash, free tier)
 
-| Feature | Trigger | Model |
-|---|---|---|
-| Alias resolution | Unknown key logged | Gemini Flash |
-| Context extraction | Input > 3 words | Gemini Flash |
-| Correlations | User clicks Analyze | Gemini Flash |
-| Weekly summary | User clicks Generate | Gemini Flash |
+| Feature            | Trigger              | Model        |
+| ------------------ | -------------------- | ------------ |
+| Alias resolution   | Unknown key logged   | Gemini Flash |
+| Context extraction | Input > 3 words      | Gemini Flash |
+| Correlations       | User clicks Analyze  | Gemini Flash |
+| Weekly summary     | User clicks Generate | Gemini Flash |
 
 All AI calls are async — never block the write path.
 

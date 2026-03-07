@@ -1,8 +1,7 @@
-import { signIn } from '@/auth'
-import {
-  Box, Button, Card, Stack, Text, Title, ThemeIcon,
-} from '@mantine/core'
-import { IconBrandGoogle } from '@tabler/icons-react'
+import { signIn } from '@/auth';
+import { Box, Button, Card, Stack, Text, Title } from '@mantine/core';
+import { IconBrandGoogle } from '@tabler/icons-react';
+import Image from 'next/image';
 
 export default function LoginPage() {
   return (
@@ -31,8 +30,24 @@ export default function LoginPage() {
         <Stack align="center" gap="xl">
           {/* Logo */}
           <Stack align="center" gap="xs">
-            <img src="/favicon.svg" alt="iSignal" style={{ width: 46, height: 46, borderRadius: '50%' }} />
-            <Title order={2} style={{ letterSpacing: '-0.04em', color: 'white' }}>iSignal</Title>
+            <Image
+              src="/favicon.svg"
+              alt="iSignal"
+              width={46}
+              height={46}
+              style={{
+                borderRadius: '50%',
+              }}
+            />
+            <Title
+              order={2}
+              style={{
+                letterSpacing: '-0.04em',
+                color: 'white',
+              }}
+            >
+              iSignal
+            </Title>
             <Text c="dimmed" size="sm" ta="center">
               Track anything. Understand everything.
             </Text>
@@ -46,7 +61,16 @@ export default function LoginPage() {
               '📊 Automatic trends and streaks',
               '🔒 Your data, always private',
             ].map((f) => (
-              <Text key={f} size="sm" c="dimmed" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Text
+                key={f}
+                size="sm"
+                c="dimmed"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
                 {f}
               </Text>
             ))}
@@ -55,8 +79,10 @@ export default function LoginPage() {
           {/* Sign in */}
           <form
             action={async () => {
-              'use server'
-              await signIn('google', { redirectTo: '/today' })
+              'use server';
+              await signIn('google', {
+                redirectTo: '/today',
+              });
             }}
             style={{ width: '100%' }}
           >
@@ -66,7 +92,11 @@ export default function LoginPage() {
               size="lg"
               radius="xl"
               leftSection={<IconBrandGoogle size={20} />}
-              style={{ background: 'white', color: '#1a1a1a', fontWeight: 600 }}
+              style={{
+                background: 'white',
+                color: '#1a1a1a',
+                fontWeight: 600,
+              }}
             >
               Continue with Google
             </Button>
@@ -78,5 +108,5 @@ export default function LoginPage() {
         </Stack>
       </Card>
     </Box>
-  )
+  );
 }

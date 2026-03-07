@@ -1,28 +1,31 @@
-import mongoose, { Schema, Document, Model } from 'mongoose'
+import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IPendingAliasDocument extends Document {
-  rawKey: string
-  suggestedKey: string
-  userId: string
-  confidence: number
-  status: 'pending' | 'confirmed' | 'rejected'
+  rawKey: string;
+  suggestedKey: string;
+  userId: string;
+  confidence: number;
+  status: 'pending' | 'confirmed' | 'rejected';
 }
 
 const PendingAliasSchema = new Schema<IPendingAliasDocument>(
   {
-    rawKey:       { type: String, required: true },
+    rawKey: { type: String, required: true },
     suggestedKey: { type: String, required: true },
-    userId:       { type: String, required: true },
-    confidence:   { type: Number, required: true },
-    status:       { type: String, enum: ['pending', 'confirmed', 'rejected'], default: 'pending' },
+    userId: { type: String, required: true },
+    confidence: { type: Number, required: true },
+    status: {
+      type: String,
+      enum: ['pending', 'confirmed', 'rejected'],
+      default: 'pending',
+    },
   },
   { timestamps: true }
-)
+);
 
-PendingAliasSchema.index({ userId: 1, status: 1 })
+PendingAliasSchema.index({ userId: 1, status: 1 });
 
 const PendingAliasModel: Model<IPendingAliasDocument> =
-  mongoose.models.PendingAlias ??
-  mongoose.model<IPendingAliasDocument>('PendingAlias', PendingAliasSchema)
+  mongoose.models.PendingAlias ?? mongoose.model<IPendingAliasDocument>('PendingAlias', PendingAliasSchema);
 
-export default PendingAliasModel
+export default PendingAliasModel;
