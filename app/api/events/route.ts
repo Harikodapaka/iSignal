@@ -40,18 +40,12 @@ export async function GET(req: NextRequest) {
     const tz = parseTzParam(searchParams);
     const date = searchParams.get('date') ?? toLocalDateString(tz);
 
-    const events = await EventModel.find({
-      userId: session.user.id,
-      date,
-    })
+    const events = await EventModel.find({ userId: session.user.id, date })
       .sort({ timestamp: -1 })
       .maxTimeMS(5000)
       .lean();
 
-    return NextResponse.json<ApiResponse<IEvent[]>>({
-      success: true,
-      data: events as unknown as IEvent[],
-    });
+    return NextResponse.json<ApiResponse<IEvent[]>>({ success: true, data: events as unknown as IEvent[] });
   } catch (err) {
     console.error('GET /api/events error:', err);
     return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Failed to fetch events' }, { status: 500 });
@@ -71,14 +65,8 @@ export async function POST(req: NextRequest) {
     const rl = await cache.checkRateLimit(userId, 'events', 60, 60);
     if (!rl.allowed) {
       return NextResponse.json<ApiResponse<null>>(
-        {
-          success: false,
-          error: 'Too many requests. Slow down.',
-        },
-        {
-          status: 429,
-          headers: { 'X-RateLimit-Remaining': '0' },
-        }
+        { success: false, error: 'Too many requests. Slow down.' },
+        { status: 429, headers: { 'X-RateLimit-Remaining': '0' } }
       );
     }
 
@@ -90,10 +78,7 @@ export async function POST(req: NextRequest) {
     const validated = LogSchema.safeParse(body);
     if (!validated.success) {
       return NextResponse.json<ApiResponse<null>>(
-        {
-          success: false,
-          error: validated.error.errors[0].message,
-        },
+        { success: false, error: validated.error.errors[0].message },
         { status: 400 }
       );
     }
@@ -131,7 +116,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Resolve unit: typed > KNOWN_METRICS > existing DB metric ────────────
+    const known = findMetric(resolvedKey);
+    const existingMetric =
+      parsed.unit == null && known?.unit == null
+        ? await MetricModel.findOne({ userId, metricKey: resolvedKey }).lean()
+        : null;
+    const resolvedUnit = parsed.unit ?? known?.unit ?? existingMetric?.unit ?? null;
+
     // ── Save event immediately ────────────────────────────────────────────────
+    const isNewMetric = !existingMetric && !(await MetricModel.exists({ userId, metricKey: resolvedKey }));
+
     const event = await EventModel.create({
       userId,
       timestamp: new Date().toISOString(),
@@ -140,14 +135,8 @@ export async function POST(req: NextRequest) {
       metricKey: resolvedKey,
       value: parsed.value,
       valueType: parsed.valueType,
-      unit: parsed.unit,
+      unit: resolvedUnit,
     });
-
-    const known = findMetric(resolvedKey);
-    const isNewMetric = !(await MetricModel.exists({
-      userId,
-      metricKey: resolvedKey,
-    }));
 
     await MetricModel.findOneAndUpdate(
       { userId, metricKey: resolvedKey },
@@ -155,8 +144,8 @@ export async function POST(req: NextRequest) {
         $setOnInsert: {
           displayName: known?.displayName ?? getMetricDisplayName(resolvedKey),
           valueType: parsed.valueType,
-          unit: parsed.unit ?? known?.unit ?? null,
-          aggregation: known?.aggregation ?? inferAggregation(parsed.valueType, parsed.unit ?? known?.unit),
+          unit: resolvedUnit,
+          aggregation: known?.aggregation ?? inferAggregation(parsed.valueType, resolvedUnit),
           pinned: false,
         },
         $inc: { frequencyScore: 1 },
@@ -165,12 +154,7 @@ export async function POST(req: NextRequest) {
     );
 
     await MetricModel.findOneAndUpdate(
-      {
-        userId,
-        metricKey: resolvedKey,
-        frequencyScore: { $gte: 3 },
-        pinned: false,
-      },
+      { userId, metricKey: resolvedKey, frequencyScore: { $gte: 3 }, pinned: false },
       { $set: { pinned: true } }
     );
 
@@ -211,10 +195,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json<ApiResponse<IEvent>>(
-      {
-        success: true,
-        data: event.toObject() as unknown as IEvent,
-      },
+      { success: true, data: event.toObject() as unknown as IEvent },
       { status: 201 }
     );
   } catch (err) {
@@ -236,11 +217,7 @@ async function triggerAIResolution(rawKey: string, userId: string) {
   if (result.confidence >= 0.5) {
     await PendingAliasModel.findOneAndUpdate(
       { rawKey, userId, status: 'pending' },
-      {
-        suggestedKey: result.match,
-        confidence: result.confidence,
-        status: 'pending',
-      },
+      { suggestedKey: result.match, confidence: result.confidence, status: 'pending' },
       { upsert: true }
     );
     console.log(`[AI] pending alias: "${rawKey}" → "${result.match}" (${result.confidence})`);
@@ -291,20 +268,12 @@ async function triggerMetricExtraction(eventId: string, rawText: string, current
   // Next time this rawKey is logged it resolves instantly without AI.
   await AliasModel.findOneAndUpdate(
     { rawKey: currentMetricKey.toLowerCase(), userId },
-    {
-      canonicalKey: best.metricKey,
-      createdBy: 'ai',
-      confidence: best.confidence,
-    },
+    { canonicalKey: best.metricKey, createdBy: 'ai', confidence: best.confidence },
     { upsert: true }
   );
 
   // Delete the orphan metric if it was only just created (frequencyScore === 1)
-  await MetricModel.deleteOne({
-    userId,
-    metricKey: currentMetricKey,
-    frequencyScore: { $lte: 1 },
-  });
+  await MetricModel.deleteOne({ userId, metricKey: currentMetricKey, frequencyScore: { $lte: 1 } });
 
   await Promise.all([
     cache.del(`alias:${userId}:${currentMetricKey}`),
