@@ -174,10 +174,7 @@ Respond ONLY with JSON, no markdown, no explanation:
 If unsure, return null. Only match when semantically clear and direct.`,
         80
       );
-      const parsed = parseJSON(text, {
-        match: null as string | null,
-        confidence: 0,
-      });
+      const parsed = parseJSON(text, { match: null as string | null, confidence: 0 });
       // Hard guard: reject if model hallucinated the input key back
       if (parsed.match === rawKey) {
         console.warn(`[AI] aiResolveAlias: model returned input as match — rejecting`);
@@ -201,31 +198,26 @@ If unsure, return null. Only match when semantically clear and direct.`,
 export async function aiExtractMetrics(
   raw: string,
   userId: string
-): Promise<
-  {
-    metricKey: string;
-    value: number | null;
-    unit: string | null;
-    confidence: number;
-  }[]
-> {
+): Promise<{ metricKey: string; value: number | null; unit: string | null; confidence: number }[]> {
   const existingMetrics = await getUserMetricKeys(userId);
 
-  const ck = hashKey('extract', raw);
+  const ck = hashKey('extract_v3', raw);
   const result = await cachedGeminiCall(
     ck,
     async () => {
       console.log(`[AI] aiExtractMetrics: "${raw}"`);
       const text = await groq(
-        `You are extracting a health metric from a user's log entry.
+        `You are extracting a health/lifestyle metric from a user's log entry.
 
 User input: "${raw}"
 Known metric keys (you MUST pick from this list): ${JSON.stringify(existingMetrics)}
 
 Rules:
+- Correct any spelling mistakes in the input before interpreting it (e.g. "slep" → "sleep", "meeditation" → "meditation", "wter" → "water")
 - metricKey MUST be one of the known keys above — never invent a new key
+- Match semantically — consider typos, abbreviations, slang, and indirect phrasing
 - Extract only the single best matching metric
-- value: the numeric value if mentioned, otherwise null
+- value: the numeric value if explicitly mentioned, OR infer from sentiment for scored metrics (/10 scale): "awesome"/"amazing" → 9, "good" → 7, "okay" → 5, "bad"/"terrible" → 3
 - unit: the unit if mentioned, otherwise null
 - If nothing maps to a known key with confidence > 0.7, return an empty array []
 
@@ -236,6 +228,15 @@ Examples:
   input: "had booze with friends", keys: ["alcohol","sleep","workout"]
   → [{ "metricKey": "alcohol", "value": 1, "unit": null, "confidence": 0.95 }]
 
+  input: "feeling awesome", keys: ["mood","sleep","workout"]
+  → [{ "metricKey": "mood", "value": 9, "unit": null, "confidence": 0.95 }]
+
+  input: "slept 7 hrs", keys: ["sleep","workout","mood"]
+  → [{ "metricKey": "sleep", "value": 7, "unit": "h", "confidence": 0.99 }]
+
+  input: "wter 2L", keys: ["water","sleep","mood"]
+  → [{ "metricKey": "water", "value": 2, "unit": "L", "confidence": 0.95 }]
+
   input: "random gibberish xyz", keys: ["sleep","workout"]
   → []
 
@@ -243,14 +244,10 @@ Respond ONLY with a JSON array, no markdown, no explanation:
 [{ "metricKey": "known_key", "value": null_or_number, "unit": null_or_string, "confidence": 0.0 }]`,
         150
       );
-      const parsed = parseJSON<
-        {
-          metricKey: string;
-          value: number | null;
-          unit: string | null;
-          confidence: number;
-        }[]
-      >(text, []);
+      const parsed = parseJSON<{ metricKey: string; value: number | null; unit: string | null; confidence: number }[]>(
+        text,
+        []
+      );
       // Hard guard: only keep results where metricKey is actually in the known list
       const valid = parsed.filter((r) => existingMetrics.includes(r.metricKey));
       if (valid.length !== parsed.length) {
@@ -274,11 +271,7 @@ export async function aiExtractContext(
   metricKey: string,
   userId: string
 ): Promise<{ sentiment: string; tags: string[]; note: string | null }> {
-  const fallback = {
-    sentiment: 'neutral',
-    tags: [] as string[],
-    note: null,
-  };
+  const fallback = { sentiment: 'neutral', tags: [] as string[], note: null };
 
   const ck = hashKey('ctx', raw + metricKey);
   const result = await cachedGeminiCall(
@@ -341,15 +334,7 @@ Respond ONLY with JSON, no markdown:
 export async function aiCorrelations(
   events: { metricKey: string; value: number; date: string }[],
   userId: string
-): Promise<
-  {
-    metricA: string;
-    metricB: string;
-    direction: string;
-    strength: string;
-    insight: string;
-  }[]
-> {
+): Promise<{ metricA: string; metricB: string; direction: string; strength: string; insight: string }[]> {
   if (events.length < 20) return [];
 
   const ck = hashKey('corr', userId + events.length + events[events.length - 1]?.date);

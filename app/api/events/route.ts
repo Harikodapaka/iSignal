@@ -90,8 +90,33 @@ export async function POST(req: NextRequest) {
     // (e.g. "watched jurassic park movie" → "watched movie")
     const userMetricKeys = await getUserMetricKeys(userId);
     const parsed = parseLogInput(rawText, userMetricKeys);
+
+    // Parser returns null when all tokens are noise words (e.g. "feeling awesome").
+    // For multi-word inputs, save a temporary event and let AI extract the real metric.
+    // For single words, reject — there's genuinely nothing to log.
     if (!parsed) {
-      return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Could not parse input' }, { status: 400 });
+      const words = rawText.trim().split(/\s+/);
+      if (words.length < 2) {
+        return NextResponse.json<ApiResponse<null>>(
+          { success: false, error: 'Could not parse input' },
+          { status: 400 }
+        );
+      }
+      // Multi-word: save as unknown and let AI figure it out
+      const tempEvent = await EventModel.create({
+        userId,
+        timestamp: new Date().toISOString(),
+        date: toLocalDateString(tz),
+        rawText,
+        metricKey: '__unknown__',
+        value: true,
+        valueType: 'boolean',
+        unit: null,
+      });
+      triggerMetricExtraction(String(tempEvent._id), rawText, '__unknown__', userId).catch((err) =>
+        console.error('[events] triggerMetricExtraction failed:', err)
+      );
+      return NextResponse.json<ApiResponse<{ id: string }>>({ success: true, data: { id: String(tempEvent._id) } });
     }
 
     // ── Fast path alias resolution (cache → DB, no AI) ────────────────────────
@@ -242,11 +267,19 @@ async function triggerMetricExtraction(eventId: string, rawText: string, current
 
   const known = KNOWN_METRICS.find((m) => m.key === best.metricKey);
 
+  const resolvedUnit = best.unit ?? known?.unit ?? null;
+  // If AI returned no value but the known metric is numeric, default to true-ish sentinel.
+  // For number metrics: use known default or leave null so the event stores a meaningful type.
+  // valueType must always match the known metric — never store boolean for a number metric.
+  const resolvedValueType = known?.type ?? (best.value !== null ? 'number' : 'boolean');
+  const resolvedValue = best.value !== null ? best.value : resolvedValueType === 'boolean' ? true : null;
+
   await EventModel.findByIdAndUpdate(eventId, {
     $set: {
       metricKey: best.metricKey,
-      ...(best.value !== null ? { value: best.value } : {}),
-      ...(best.unit !== null ? { unit: best.unit } : {}),
+      valueType: resolvedValueType,
+      ...(resolvedValue !== null ? { value: resolvedValue } : {}),
+      ...(resolvedUnit !== null ? { unit: resolvedUnit } : {}),
     },
   });
 
@@ -255,8 +288,9 @@ async function triggerMetricExtraction(eventId: string, rawText: string, current
     {
       $setOnInsert: {
         displayName: known?.displayName ?? getMetricDisplayName(best.metricKey),
-        valueType: best.value !== null ? 'number' : 'boolean',
-        unit: best.unit ?? known?.unit ?? null,
+        valueType: resolvedValueType,
+        unit: resolvedUnit,
+        aggregation: known?.aggregation ?? inferAggregation(resolvedValueType, resolvedUnit),
         pinned: false,
       },
       $inc: { frequencyScore: 1 },
@@ -264,16 +298,22 @@ async function triggerMetricExtraction(eventId: string, rawText: string, current
     { upsert: true, new: true }
   );
 
-  // Event is already patched — write alias directly, no confirmation needed.
-  // Next time this rawKey is logged it resolves instantly without AI.
-  await AliasModel.findOneAndUpdate(
-    { rawKey: currentMetricKey.toLowerCase(), userId },
-    { canonicalKey: best.metricKey, createdBy: 'ai', confidence: best.confidence },
-    { upsert: true }
-  );
+  // Write alias so next time the same raw input resolves instantly without AI.
+  // Skip if currentMetricKey is '__unknown__' — it's a placeholder, not a real raw input,
+  // and aliasing it would make ALL future unrecognised inputs resolve to this metric.
+  if (currentMetricKey !== '__unknown__') {
+    await AliasModel.findOneAndUpdate(
+      { rawKey: currentMetricKey.toLowerCase(), userId },
+      { canonicalKey: best.metricKey, createdBy: 'ai', confidence: best.confidence },
+      { upsert: true }
+    );
+  }
 
   // Delete the orphan metric if it was only just created (frequencyScore === 1)
-  await MetricModel.deleteOne({ userId, metricKey: currentMetricKey, frequencyScore: { $lte: 1 } });
+  // Don't try to delete '__unknown__' — it's not a real metric doc
+  if (currentMetricKey !== '__unknown__') {
+    await MetricModel.deleteOne({ userId, metricKey: currentMetricKey, frequencyScore: { $lte: 1 } });
+  }
 
   await Promise.all([
     cache.del(`alias:${userId}:${currentMetricKey}`),

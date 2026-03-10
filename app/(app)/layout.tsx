@@ -48,15 +48,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               }}
             >
               <Group gap="sm">
-                <Image
-                  src="/favicon.svg"
-                  alt="iSignal"
-                  width={46}
-                  height={46}
-                  style={{
-                    borderRadius: '50%',
-                  }}
-                />
+                <Image src="/android-icon-192x192.png" alt="iSignal" width={60} height={60} />
                 <Box>
                   <Text
                     fw={700}
@@ -210,15 +202,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             }}
           >
             <Group gap={8}>
-              <Image
-                src="/favicon.svg"
-                alt="iSignal"
-                width={28}
-                height={28}
-                style={{
-                  borderRadius: '50%',
-                }}
-              />
+              <Image src="/android-icon-192x192.png" alt="iSignal" width={28} height={28} />
 
               <Box>
                 <Text

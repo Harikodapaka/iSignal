@@ -1,6 +1,7 @@
 import type { LogInputParsed } from '@/types';
 import { KNOWN_METRICS } from '@/lib/metrics';
 import { UNIT_MAP, NOISE_WORDS, VERB_TOKENS } from '@/lib/parser-constants';
+
 export { KNOWN_METRICS } from '@/lib/metrics';
 export { UNIT_MAP, NOISE_WORDS, VERB_TOKENS } from '@/lib/parser-constants';
 
@@ -26,7 +27,7 @@ function levenshtein(a: string, b: string): number {
 
 function maxDistance(word: string): number {
   if (word.length <= 3) return 0;
-  if (word.length <= 5) return 1;
+  if (word.length <= 7) return 1; // distance 2 causes too many false matches (shaved→shake etc.)
   return 2;
 }
 
@@ -77,30 +78,16 @@ function pickMetricKey(
   keyTokens: string[],
   userKeys: string[] = []
 ): { key: string; metric: ReturnType<typeof findMetric> } {
-  const candidates: {
-    key: string;
-    metric: ReturnType<typeof findMetric>;
-    score: number;
-  }[] = [];
+  const candidates: { key: string; metric: ReturnType<typeof findMetric>; score: number }[] = [];
 
   for (const token of keyTokens) {
     const m = findMetric(token);
-    if (m)
-      candidates.push({
-        key: m.key,
-        metric: m,
-        score: scoreMatch(token, m, false),
-      });
+    if (m) candidates.push({ key: m.key, metric: m, score: scoreMatch(token, m, false) });
   }
   for (let i = 0; i < keyTokens.length - 1; i++) {
     const pair = `${keyTokens[i]} ${keyTokens[i + 1]}`;
     const m = findMetric(pair);
-    if (m)
-      candidates.push({
-        key: m.key,
-        metric: m,
-        score: scoreMatch(pair, m, true),
-      });
+    if (m) candidates.push({ key: m.key, metric: m, score: scoreMatch(pair, m, true) });
   }
 
   // Match user-created keys — "watched jurassic park movie" → "watched movie"
@@ -169,13 +156,7 @@ export function parseLogInput(raw: string, userMetricKeys: string[] = []): LogIn
   if (!keyTokens.length) return null;
   const { key: metricKey, metric: known } = pickMetricKey(keyTokens, userMetricKeys);
 
-  if (value !== null)
-    return {
-      metricKey,
-      value,
-      valueType: 'number',
-      unit: unit ?? known?.unit,
-    };
+  if (value !== null) return { metricKey, value, valueType: 'number', unit: unit ?? known?.unit };
   return { metricKey, value: true, valueType: 'boolean' };
 }
 

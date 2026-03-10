@@ -11,9 +11,18 @@ export default async function proxy(req: NextRequest) {
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/login') ||
     pathname.startsWith('/_next') ||
+    // Static assets served from public/ folder — at root, NOT /public/
     pathname === '/favicon.ico' ||
     pathname === '/favicon.svg' ||
-    pathname.startsWith('/public/');
+    pathname === '/sw.js' ||
+    pathname === '/manifest.json' ||
+    pathname === '/browserconfig.xml' ||
+    pathname.startsWith('/android-icon-') ||
+    pathname.startsWith('/apple-icon-') ||
+    pathname.startsWith('/ms-icon-') ||
+    pathname.startsWith('/favicon-') ||
+    pathname === '/apple-icon.png' ||
+    pathname === '/apple-icon-precomposed.png';
 
   if (isPublic) return NextResponse.next();
 
@@ -27,5 +36,8 @@ export default async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon\\.|public|.*\\.svg).*)'],
+  // Exclude static files from proxy entirely — avoids running auth() on them
+  matcher: [
+    '/((?!_next/static|_next/image|favicon|android-icon-|apple-icon|ms-icon-|sw\\.js|manifest\\.json|browserconfig\\.xml|.*\\.svg|.*\\.png|.*\\.ico|.*\\.xml).*)',
+  ],
 };

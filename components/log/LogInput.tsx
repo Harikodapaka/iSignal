@@ -25,14 +25,7 @@ interface Suggestion {
 }
 
 function toSuggestion(m: (typeof KNOWN_METRICS)[number]): Suggestion {
-  return {
-    key: m.key,
-    displayName: m.displayName,
-    emoji: m.emoji,
-    type: m.type,
-    unit: m.unit,
-    color: m.color,
-  };
+  return { key: m.key, displayName: m.displayName, emoji: m.emoji, type: m.type, unit: m.unit, color: m.color };
 }
 
 export function LogInput({ onLogged }: { onLogged?: () => void }) {
@@ -72,11 +65,7 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
     const recalc = () => {
       if (!wrapRef.current) return;
       const rect = wrapRef.current.getBoundingClientRect();
-      setDropPos({
-        top: rect.bottom + 8,
-        left: rect.left,
-        width: rect.width,
-      });
+      setDropPos({ top: rect.bottom + 8, left: rect.left, width: rect.width });
     };
     recalc();
     window.addEventListener('scroll', recalc, { passive: true });
@@ -132,6 +121,52 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
     inputRef.current?.focus();
   };
 
+  const pollForResolution = (eventId: string, notifId: string) => {
+    const delays = [2000, 3000, 5000]; // poll at 2s, 5s, 10s
+    let attempt = 0;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/events?id=${eventId}`);
+        const data = await res.json();
+        const key = data.data?.metricKey;
+        if (key && key !== '__unknown__') {
+          notifications.update({
+            id: notifId,
+            message: `✓  ${getMetricDisplayName(key)} logged`,
+            color: 'green',
+            autoClose: 2000,
+            loading: false,
+            styles: { root: { background: 'var(--card-bg)', border: '1px solid var(--green)' } },
+          });
+          fetch('/api/metrics')
+            .then((r) => r.json())
+            .then((d) => {
+              if (d.success) setUserMetrics(d.data ?? []);
+            })
+            .catch(() => {});
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+      if (attempt < delays.length) {
+        attempt++;
+        setTimeout(poll, delays[attempt - 1]);
+      } else {
+        // Gave up — close the pending toast
+        notifications.update({
+          id: notifId,
+          message: '✓  Entry logged',
+          color: 'green',
+          autoClose: 2000,
+          loading: false,
+          styles: { root: { background: 'var(--card-bg)', border: '1px solid var(--green)' } },
+        });
+      }
+    };
+    setTimeout(poll, delays[0]);
+  };
+
   const handleSubmit = async () => {
     if (!value.trim() || loading) return;
     setLoading(true);
@@ -148,17 +183,30 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
 
       const userKeys = userMetrics.map((m) => m.metricKey);
       const parsed = parseLogInput(value.trim(), userKeys);
-      notifications.show({
-        message: `✓  ${getMetricDisplayName(parsed?.metricKey ?? value)} logged`,
-        color: 'green',
-        autoClose: 2000,
-        styles: {
-          root: {
-            background: 'var(--card-bg)',
-            border: '1px solid var(--green)',
-          },
-        },
-      });
+      const notifId = `log-${Date.now()}`;
+
+      if (!parsed && data.data?.id) {
+        // AI is resolving async — show pending toast then update it
+        notifications.show({
+          id: notifId,
+          message: '⏳  Figuring out what to log…',
+          color: 'gray',
+          autoClose: false,
+          loading: true,
+          styles: { root: { background: 'var(--card-bg)', border: '1px solid var(--card-border)' } },
+        });
+        pollForResolution(data.data.id, notifId);
+      } else {
+        const label = parsed?.metricKey ? getMetricDisplayName(parsed.metricKey) : 'Entry';
+        notifications.show({
+          id: notifId,
+          message: `✓  ${label} logged`,
+          color: 'green',
+          autoClose: 2000,
+          styles: { root: { background: 'var(--card-bg)', border: '1px solid var(--green)' } },
+        });
+      }
+
       setValue('');
       // Refresh user metrics so new metrics appear in autocomplete immediately
       fetch('/api/metrics')
@@ -169,8 +217,10 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
         .catch(() => {});
       onLogged?.();
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to log';
+      const friendly = msg === 'Could not parse input' ? 'Nothing to log — try being more specific' : msg;
       notifications.show({
-        message: err instanceof Error ? err.message : 'Failed to log',
+        message: friendly,
         color: 'red',
         autoClose: 3000,
       });
@@ -213,13 +263,7 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
                   <Group justify="space-between">
                     <Group gap="xs">
                       <Text size="sm">{m.emoji}</Text>
-                      <Text
-                        size="sm"
-                        fw={500}
-                        style={{
-                          color: 'var(--text-primary)',
-                        }}
-                      >
+                      <Text size="sm" fw={500} style={{ color: 'var(--text-primary)' }}>
                         {m.key}
                       </Text>
                     </Group>
@@ -244,7 +288,6 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
 
   return (
     <Box ref={wrapRef} style={{ position: 'relative', zIndex: 10 }}>
-      {/* Input bar */}
       <Box
         style={{
           display: 'flex',
@@ -273,7 +316,7 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
           }}
           onBlur={() => {
             setFocused(false);
-            void setTimeout(() => setOpen(false), 150);
+            setTimeout(() => setOpen(false), 150);
           }}
           placeholder="sleep 7.5  ·  workout  ·  mood 8  ·  protein 142"
           autoComplete="off"
@@ -293,11 +336,7 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
         <Text
           size="xs"
           className="hide-mobile"
-          style={{
-            whiteSpace: 'nowrap',
-            paddingRight: 4,
-            color: 'var(--text-muted)',
-          }}
+          style={{ whiteSpace: 'nowrap', paddingRight: 4, color: 'var(--text-muted)' }}
         >
           ↵ to log
         </Text>
@@ -316,8 +355,6 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
           {loading ? <Loader size={14} color="white" /> : <IconArrowUp size={18} />}
         </ActionIcon>
       </Box>
-
-      {/* Dropdown rendered into document.body via portal */}
       {dropdown}
     </Box>
   );
