@@ -251,4 +251,8 @@ body {
   .mobile-only {
     display: none !important;
   }
+
+  .desktop-only {
+    display: block;
+  }
 }

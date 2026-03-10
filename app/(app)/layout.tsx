@@ -259,7 +259,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Box>
         </AppShell.Main>
       </AppShell>
-
+      <Box
+        className="desktop-only"
+        style={{
+          position: 'fixed',
+          bottom: rem(28),
+          right: rem(18),
+          zIndex: 200,
+        }}
+      >
+        <ThemeSwitcher />
+      </Box>
       {/* ── MOBILE BOTTOM NAV ── */}
       <nav className="mobile-bottom-nav mobile-only">
         <div className="mobile-nav-inner">
