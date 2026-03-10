@@ -84,6 +84,8 @@ export const NOISE_WORDS = new Set([
   'feel', 'felt', 'feeling', 'feelings', 'feels',
   // grooming / personal care — no metric signal on their own
   'showered', 'brushed', 'flossed', 'washed', 'groomed', 'trimmed',
+  // expletives / vague bodily terms — no standalone metric signal
+  'shit', 'dump', 'poop', 'crap', 'pee', 'piss',
   // misc
   'seems', 'seemed', 'actually', 'basically', 'honestly', 'literally',
   'probably', 'maybe', 'perhaps', 'sure', 'yes', 'no', 'not',

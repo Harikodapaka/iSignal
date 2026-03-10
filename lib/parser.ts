@@ -5,73 +5,23 @@ import { UNIT_MAP, NOISE_WORDS, VERB_TOKENS } from '@/lib/parser-constants';
 export { KNOWN_METRICS } from '@/lib/metrics';
 export { UNIT_MAP, NOISE_WORDS, VERB_TOKENS } from '@/lib/parser-constants';
 
-// ── Levenshtein edit distance ─────────────────────────────────────────────────
-function levenshtein(a: string, b: string): number {
-  const m = a.length,
-    n = b.length;
-  if (m === 0) return n;
-  if (n === 0) return m;
-  if (Math.abs(m - n) > 3) return 99;
-  const dp: number[] = Array.from({ length: n + 1 }, (_, i) => i);
-  for (let i = 1; i <= m; i++) {
-    let prev = dp[0];
-    dp[0] = i;
-    for (let j = 1; j <= n; j++) {
-      const temp = dp[j];
-      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
-      prev = temp;
-    }
-  }
-  return dp[n];
-}
-
-function maxDistance(word: string): number {
-  if (word.length <= 3) return 0;
-  if (word.length <= 7) return 1; // distance 2 causes too many false matches (shaved→shake etc.)
-  return 2;
-}
-
-// Flat lookup table: every key + alias → metric index
-const ALL_TERMS: { term: string; metricIdx: number }[] = [];
-for (let i = 0; i < KNOWN_METRICS.length; i++) {
-  const m = KNOWN_METRICS[i];
-  ALL_TERMS.push({ term: m.key, metricIdx: i });
-  for (const alias of m.aliases ?? []) ALL_TERMS.push({ term: alias, metricIdx: i });
-}
-
-// ── Metric lookup ─────────────────────────────────────────────────────────────
+// ── Metric lookup — exact match only, no fuzzy ────────────────────────────────
+// Fuzzy matching was removed: too many false positives (shit→shot→alcohol etc.)
+// Typos and slang are handled by the AI fallback which writes aliases for next time.
 export function findMetric(key: string) {
   const lower = key.toLowerCase().trim();
-  const exact = KNOWN_METRICS.find((m) => m.key === lower || m.aliases?.includes(lower));
-  if (exact) return exact;
-
-  const threshold = maxDistance(lower);
-  if (threshold === 0) return undefined;
-
-  let bestDist = threshold + 1,
-    bestIdx = -1;
-  for (const { term, metricIdx } of ALL_TERMS) {
-    if (Math.abs(term.length - lower.length) > threshold) continue;
-    const dist = levenshtein(lower, term);
-    if (dist < bestDist) {
-      bestDist = dist;
-      bestIdx = metricIdx;
-    }
-  }
-  return bestIdx >= 0 ? KNOWN_METRICS[bestIdx] : undefined;
+  return KNOWN_METRICS.find((m) => m.key === lower || m.aliases?.includes(lower));
 }
 
 // ── Smart token picker ────────────────────────────────────────────────────────
-// Score: key=3, alias=2, fuzzy=1, pair=+0.5, verb=-0.5, user-exact=3.5, user-partial=2.5
+// Score: key=3, alias=2, pair=+0.5, verb=-0.5, user-exact=3.5, user-partial=2.5
 
 type Metric = NonNullable<ReturnType<typeof findMetric>>;
 
 function scoreMatch(token: string, metric: Metric, isPair: boolean): number {
   const lower = token.toLowerCase();
-  let score = metric.key === lower ? 3 : metric.aliases?.includes(lower) ? 2 : 1;
-  if (isPair) score += 0.5;
-  if (VERB_TOKENS.has(lower)) score -= 0.5;
-  return score;
+  const score = metric.key === lower ? 3 : 2; // key=3, alias=2 (no fuzzy=1 anymore)
+  return score + (isPair ? 0.5 : 0) - (VERB_TOKENS.has(lower) ? 0.5 : 0);
 }
 
 function pickMetricKey(
@@ -80,17 +30,20 @@ function pickMetricKey(
 ): { key: string; metric: ReturnType<typeof findMetric> } {
   const candidates: { key: string; metric: ReturnType<typeof findMetric>; score: number }[] = [];
 
+  // Single token exact match
   for (const token of keyTokens) {
     const m = findMetric(token);
     if (m) candidates.push({ key: m.key, metric: m, score: scoreMatch(token, m, false) });
   }
+
+  // Adjacent pair exact match (e.g. "screen time", "protein shake")
   for (let i = 0; i < keyTokens.length - 1; i++) {
     const pair = `${keyTokens[i]} ${keyTokens[i + 1]}`;
     const m = findMetric(pair);
     if (m) candidates.push({ key: m.key, metric: m, score: scoreMatch(pair, m, true) });
   }
 
-  // Match user-created keys — "watched jurassic park movie" → "watched movie"
+  // Match user-created metric keys — "watched jurassic park movie" → "watched movie"
   const lower = keyTokens.join(' ');
   for (const uk of userKeys) {
     const ukLower = uk.toLowerCase();
@@ -105,8 +58,10 @@ function pickMetricKey(
     const best = candidates.reduce((a, b) => (b.score > a.score ? b : a));
     return { key: best.key, metric: best.metric };
   }
+
+  // No match — return compound key, let AI handle it
   const compound = keyTokens.join(' ');
-  return { key: compound, metric: findMetric(compound) };
+  return { key: compound, metric: undefined };
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

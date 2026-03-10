@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ActionIcon, AppShell, Avatar, Box, Group, NavLink, Stack, Text, UnstyledButton, rem } from '@mantine/core';
-import { IconHome, IconChartLine, IconLayoutGrid, IconBulb, IconLogout } from '@tabler/icons-react';
+import { IconHome, IconChartLine, IconLayoutGrid, IconBulb, IconLogout, IconRefresh } from '@tabler/icons-react';
 import { useSession, signOut } from 'next-auth/react';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import Image from 'next/image';
@@ -203,7 +203,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Group gap={8}>
               <Image src="/android-icon-192x192.png" alt="iSignal" width={28} height={28} />
-
               <Box>
                 <Text
                   fw={700}
@@ -228,6 +227,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </Box>
             </Group>
             <Group gap="xs">
+              <ActionIcon size="lg" radius="md" aria-label="Refresh" onClick={() => window.location.reload()}>
+                <IconRefresh size={18} />
+              </ActionIcon>
               <ThemeSwitcher />
               <ActionIcon
                 size="lg"

@@ -201,7 +201,7 @@ export async function aiExtractMetrics(
 ): Promise<{ metricKey: string; value: number | null; unit: string | null; confidence: number }[]> {
   const existingMetrics = await getUserMetricKeys(userId);
 
-  const ck = hashKey('extract_v3', raw);
+  const ck = hashKey('extract_v4', raw);
   const result = await cachedGeminiCall(
     ck,
     async () => {
@@ -239,6 +239,9 @@ Examples:
 
   input: "random gibberish xyz", keys: ["sleep","workout"]
   → []
+
+  input: "shit dump", keys: ["bowel_movement","sleep","alcohol"]
+  → [{ "metricKey": "bowel_movement", "value": null, "unit": null, "confidence": 0.95 }]
 
 Respond ONLY with a JSON array, no markdown, no explanation:
 [{ "metricKey": "known_key", "value": null_or_number, "unit": null_or_string, "confidence": 0.0 }]`,
