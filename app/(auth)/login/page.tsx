@@ -30,7 +30,7 @@ export default function LoginPage() {
         <Stack align="center" gap="xl">
           {/* Logo */}
           <Stack align="center" gap="xs">
-            <Image src="/image.png" alt="iSignal" width={80} height={80} />
+            <Image src="/logo.png" alt="iSignal" width={80} height={80} />
             <Title
               order={2}
               style={{
