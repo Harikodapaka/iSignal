@@ -62,4 +62,5 @@ export const theme = createTheme({
     ActionIcon: { defaultProps: { radius: 'xl' } },
     NavLink: { defaultProps: { radius: 'md' } },
   },
+  cursorType: 'pointer',
 });

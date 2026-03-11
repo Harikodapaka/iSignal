@@ -21,11 +21,7 @@ export async function GET(req: NextRequest) {
 
     const cacheKey = pinnedOnly ? `metrics:pinned:${userId}` : `metrics:all:${userId}`;
     const cached = await cache.get<IMetric[]>(cacheKey);
-    if (cached)
-      return NextResponse.json<ApiResponse<IMetric[]>>({
-        success: true,
-        data: cached,
-      });
+    if (cached) return NextResponse.json<ApiResponse<IMetric[]>>({ success: true, data: cached });
 
     await connectDB();
     const query: Record<string, unknown> = { userId };
@@ -45,10 +41,7 @@ export async function GET(req: NextRequest) {
 
     await cache.set(cacheKey, patched, pinnedOnly ? 300 : 120);
 
-    return NextResponse.json<ApiResponse<IMetric[]>>({
-      success: true,
-      data: patched as unknown as IMetric[],
-    });
+    return NextResponse.json<ApiResponse<IMetric[]>>({ success: true, data: patched as unknown as IMetric[] });
   } catch (err) {
     console.error('GET /api/metrics error:', err);
     return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Failed to fetch metrics' }, { status: 500 });
@@ -84,7 +77,12 @@ export async function PATCH(req: NextRequest) {
 
     // Build $set from whichever fields were provided
     const $set: Record<string, unknown> = {};
-    if (updates.pinned !== undefined) $set.pinned = updates.pinned;
+    if (updates.pinned !== undefined) {
+      $set.pinned = updates.pinned;
+      // Track explicit unpin so auto-pin logic never overrides user intent
+      if (updates.pinned === false) $set.userUnpinned = true;
+      if (updates.pinned === true) $set.userUnpinned = false;
+    }
     if (updates.displayName !== undefined) $set.displayName = updates.displayName;
     if (updates.unit !== undefined) $set.unit = updates.unit;
     if (updates.aggregation !== undefined) $set.aggregation = updates.aggregation;
@@ -105,10 +103,7 @@ export async function PATCH(req: NextRequest) {
       await cache.del(`analytics:${userId}:${metricKey}:${suffix}`);
     }
 
-    return NextResponse.json<ApiResponse<IMetric>>({
-      success: true,
-      data: metric.toObject() as unknown as IMetric,
-    });
+    return NextResponse.json<ApiResponse<IMetric>>({ success: true, data: metric.toObject() as unknown as IMetric });
   } catch (err) {
     console.error('PATCH /api/metrics error:', err);
     return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Failed to update metric' }, { status: 500 });

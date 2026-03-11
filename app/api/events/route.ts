@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
     );
 
     await MetricModel.findOneAndUpdate(
-      { userId, metricKey: resolvedKey, frequencyScore: { $gte: 3 }, pinned: false },
+      { userId, metricKey: resolvedKey, frequencyScore: { $gte: 3 }, pinned: false, userUnpinned: { $ne: true } },
       { $set: { pinned: true } }
     );
 
