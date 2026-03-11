@@ -105,8 +105,7 @@ raw input
   → strip NOISE_WORDS (filler: "i", "my", "done", "feeling" ...)
   → VERB_TOKENS get -0.5 score penalty ("drank", "shaved" ...)
   → extract numeric value + unit via UNIT_MAP
-  → fuzzy match remaining tokens against KNOWN_METRICS aliases
-      maxDistance: 0 for ≤3 chars, 1 for ≤7 chars, 2 for 8+ chars
+  → exact match remaining tokens against KNOWN_METRICS + user metric keys
   → alias cache lookup (MongoDB TTL cache)
   → single word with no match → 400 error
   → multi-word with no match → AI extraction via Groq
@@ -176,7 +175,7 @@ app/
 │   ├── today/          — log input + today's pinned metrics
 │   ├── trends/         — charts with 7d / 30d / 3mo range selector
 │   ├── metrics/        — all metrics, edit drawer (name/unit/aggregation)
-│   └── insights/       — placeholder
+│   └── insights/       — AI correlations + weekly summary (Groq)
 ├── api/
 │   ├── events/         — POST log, GET by date or id (AI poll)
 │   ├── metrics/        — GET pinned, PATCH (pin, edit, unit backfill)

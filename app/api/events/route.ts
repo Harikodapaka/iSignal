@@ -6,7 +6,7 @@ import { connectDB } from '@/lib/mongodb';
 import { cache } from '@/lib/cache';
 import { parseLogInput, getMetricDisplayName, findMetric, KNOWN_METRICS } from '@/lib/parser';
 import { toLocalDateString, parseTzParam } from '@/lib/timezone';
-import { aiResolveAlias, aiExtractMetrics, getUserMetricKeys } from '@/lib/ai';
+import { aiResolveAlias, aiExtractMetrics, aiExtractContext, getUserMetricKeys } from '@/lib/ai';
 import EventModel from '@/models/Event';
 import MetricModel from '@/models/Metric';
 import AliasModel from '@/models/Alias';
@@ -250,9 +250,8 @@ async function triggerAIResolution(rawKey: string, userId: string) {
 }
 
 // ── triggerMetricExtraction ───────────────────────────────────────────────────
-// Only called when metric key was unknown — 1 Gemini call max.
-// Context annotation (sentiment/tags) removed — not displayed in UI yet,
-// not worth burning rate limit budget on.
+// Resolves unknown metric keys via AI, writes aliases for future fast lookup.
+// Also annotates event with sentiment/tags in the background.
 
 async function triggerMetricExtraction(eventId: string, rawText: string, currentMetricKey: string, userId: string) {
   console.log(`[AI] triggerMetricExtraction: "${rawText}"`);
@@ -321,4 +320,15 @@ async function triggerMetricExtraction(eventId: string, rawText: string, current
     cache.del(`metrics:pinned:${userId}`),
     cache.invalidateMetricKeys(userId),
   ]);
+
+  // Annotate event with sentiment/tags — fire and forget, never blocks the response
+  aiExtractContext(rawText, best.metricKey, userId)
+    .then(async (ctx: { sentiment: string; tags: string[]; note: string | null }) => {
+      if (ctx.sentiment !== 'neutral' || ctx.tags.length > 0 || ctx.note) {
+        await EventModel.findByIdAndUpdate(eventId, {
+          $set: { sentiment: ctx.sentiment, tags: ctx.tags, note: ctx.note },
+        }).catch(() => {});
+      }
+    })
+    .catch(() => {});
 }

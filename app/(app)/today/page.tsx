@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback } from 'react';
-import { Box, Group, SimpleGrid, Skeleton, Stack, Text, Badge } from '@mantine/core';
-import { IconFlame } from '@tabler/icons-react';
+import { useCallback, useState } from 'react';
+import { Box, Button, Group, SimpleGrid, Skeleton, Stack, Text, Badge } from '@mantine/core';
+import { IconFlame, IconChevronRight } from '@tabler/icons-react';
+import { useRouter } from 'next/navigation';
 import { LogInput } from '@/components/log/LogInput';
 import { MetricCard } from '@/components/metrics/MetricCard';
 import { PendingAliasPrompt } from '@/components/metrics/PendingAliasPrompt';
@@ -148,12 +149,19 @@ function ActivityRings({ streak, score, consistency }: { streak: number; score: 
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function TodayPage() {
+  const router = useRouter();
   const { analytics, loading: loadingA, refetch: refetchA } = useAnalytics();
   const { events, refetch: refetchE } = useEvents();
+  const [logCount, setLogCount] = useState(0);
+
+  const METRIC_LIMIT = 6;
+  const visibleMetrics = analytics.slice(0, METRIC_LIMIT);
+  const hiddenCount = Math.max(0, analytics.length - METRIC_LIMIT);
 
   const handleLogged = useCallback(() => {
     refetchA();
     refetchE();
+    setLogCount((n) => n + 1);
   }, [refetchA, refetchE]);
 
   const bestStreak = getBestStreak(analytics);
@@ -165,7 +173,7 @@ export default function TodayPage() {
   return (
     <Stack gap="xl">
       <PageHeader title="Today" />
-      <PendingAliasPrompt />
+      <PendingAliasPrompt triggerRefetch={logCount} />
 
       {/* Log bar */}
       <Box className="fade-in fade-in-1">
@@ -321,11 +329,24 @@ export default function TodayPage() {
       ) : analytics.length > 0 ? (
         <Box className="fade-in fade-in-3">
           <SectionLabel>Pinned Metrics</SectionLabel>
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
-            {analytics.map((a) => (
+          <SimpleGrid cols={{ base: 2, sm: 2, lg: 4 }} spacing="sm">
+            {visibleMetrics.map((a) => (
               <MetricCard key={a.metricKey} analytics={a} />
             ))}
           </SimpleGrid>
+          {hiddenCount > 0 && (
+            <Button
+              fullWidth
+              variant="subtle"
+              color="gray"
+              radius="xl"
+              mt="sm"
+              rightSection={<IconChevronRight size={14} />}
+              onClick={() => router.push('/trends')}
+            >
+              {hiddenCount} more metric{hiddenCount > 1 ? 's' : ''} — view all
+            </Button>
+          )}
         </Box>
       ) : (
         <GlassCard p="xl" style={{ textAlign: 'center' }}>

@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, Group, RingProgress, Stack, Text, Badge, rem } from '@mantine/core';
+import { Card, Group, Stack, Text, Badge, rem } from '@mantine/core';
 import { IconTrendingUp, IconTrendingDown, IconMinus, IconFlame } from '@tabler/icons-react';
 import { SparkBars } from '@/components/ui/SparkBars';
 import { getMetricColor, getMetricEmoji } from '@/lib/parser';
@@ -11,15 +11,9 @@ export function MetricCard({ analytics }: { analytics: IAnalytics }) {
   const emoji = getMetricEmoji(analytics.metricKey);
   const isBoolean = analytics.valueType === 'boolean';
 
-  const ringVal = isBoolean
-    ? ((analytics.daysCompletedThisWeek ?? 0) / 7) * 100
-    : analytics.monthlyAvg
-      ? Math.min(((analytics.sevenDayAvg ?? 0) / analytics.monthlyAvg) * 100, 100)
-      : 0;
-
   return (
     <Card
-      p="lg"
+      p="md"
       radius="xl"
       style={{
         background: 'var(--card-bg)',
@@ -30,81 +24,59 @@ export function MetricCard({ analytics }: { analytics: IAnalytics }) {
         cursor: 'pointer',
       }}
     >
-      <Group justify="space-between" mb="sm" align="flex-start">
-        <Stack gap={2}>
-          <Group gap={6}>
-            <Text size="md">{emoji}</Text>
-            <Text
-              size="xs"
-              fw={700}
-              tt="uppercase"
-              style={{
-                letterSpacing: '0.07em',
-                fontSize: rem(10),
-                color: 'var(--text-muted)',
-              }}
-            >
-              {analytics.displayName}
-            </Text>
-          </Group>
+      <Group justify="space-between" mb="xs" align="flex-start" wrap="nowrap">
+        <Group gap={4} style={{ minWidth: 0, flex: 1 }}>
+          <Text size="sm" style={{ flexShrink: 0 }}>
+            {emoji}
+          </Text>
+          <Text
+            size="xs"
+            fw={700}
+            tt="uppercase"
+            style={{
+              letterSpacing: '0.07em',
+              fontSize: rem(10),
+              color: 'var(--text-muted)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {analytics.displayName}
+          </Text>
+        </Group>
 
-          {isBoolean ? (
-            <Text
-              size="xl"
-              fw={800}
-              style={{
-                letterSpacing: '-0.04em',
-                color,
-              }}
-            >
-              {analytics.daysCompletedThisWeek ?? 0}
-              <Text
-                span
-                size="sm"
-                fw={400}
-                ml={2}
-                style={{
-                  color: 'var(--text-muted)',
-                }}
-              >
-                / 7 days
-              </Text>
-            </Text>
-          ) : (
-            <Text
-              size="xl"
-              fw={800}
-              style={{
-                letterSpacing: '-0.04em',
-                color: 'var(--text-primary)',
-              }}
-            >
-              {analytics.sevenDayAvg ?? 0}
-              {analytics.unit && (
-                <Text
-                  span
-                  size="sm"
-                  fw={400}
-                  ml={3}
-                  style={{
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  {analytics.unit}
-                </Text>
-              )}
+        <Stack gap={0} align="flex-end" style={{ flexShrink: 0 }}>
+          <Text fw={700} size="sm" style={{ color, letterSpacing: '-0.02em' }}>
+            {isBoolean
+              ? `${analytics.monthlyCompletionPct ?? 0}%`
+              : analytics.monthlyAvg != null
+                ? `${analytics.monthlyAvg}${analytics.unit && analytics.unit !== '/10' ? ` ${analytics.unit}` : ''}`
+                : '—'}
+          </Text>
+          <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+            30d avg
+          </Text>
+        </Stack>
+      </Group>
+
+      {isBoolean ? (
+        <Text size="xl" fw={800} mb="xs" style={{ letterSpacing: '-0.04em', color }}>
+          {analytics.daysCompletedThisWeek ?? 0}
+          <Text span size="sm" fw={400} ml={2} style={{ color: 'var(--text-muted)' }}>
+            / 7 days
+          </Text>
+        </Text>
+      ) : (
+        <Text size="xl" fw={800} mb="xs" style={{ letterSpacing: '-0.04em', color: 'var(--text-primary)' }}>
+          {analytics.sevenDayAvg ?? 0}
+          {analytics.unit && (
+            <Text span size="sm" fw={400} ml={3} style={{ color: 'var(--text-muted)' }}>
+              {analytics.unit}
             </Text>
           )}
-        </Stack>
-
-        <RingProgress
-          size={52}
-          thickness={5}
-          roundCaps
-          sections={[{ value: Math.max(ringVal, 2), color }]}
-          rootColor="var(--sep2)"
-        />
-      </Group>
+        </Text>
+      )}
 
       {analytics.last7Days && <SparkBars data={analytics.last7Days} color={color} />}
 
@@ -140,17 +112,6 @@ export function MetricCard({ analytics }: { analytics: IAnalytics }) {
                 {analytics.trendPct ? `${analytics.trendPct}%` : 'stable'}
               </Text>
             </Group>
-            {analytics.monthlyAvg != null && (
-              <Text
-                size="xs"
-                style={{
-                  color: 'var(--text-muted)',
-                }}
-              >
-                avg {analytics.monthlyAvg}
-                {analytics.unit && analytics.unit !== '/10' ? ` ${analytics.unit}` : ''} / mo
-              </Text>
-            )}
           </>
         )}
       </Group>

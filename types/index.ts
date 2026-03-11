@@ -35,6 +35,7 @@ export interface IMetric {
   unit?: string;
   aggregation?: 'sum' | 'avg' | 'last';
   pinned: boolean;
+  userUnpinned: boolean;
   frequencyScore: number;
   createdAt?: string;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Badge, Box, Button, Group, Stack, Text } from '@mantine/core';
 import { IconSparkles } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
@@ -12,15 +12,39 @@ interface PendingAlias {
   confidence: number;
 }
 
-export function PendingAliasPrompt() {
-  const [pending, setPending] = useState<PendingAlias[]>([]);
+// After a new log, AI runs async — poll at these delays to catch the result
+const POST_LOG_DELAYS = [3000, 7000, 15000];
 
-  useEffect(() => {
-    fetch('/api/aliases')
-      .then((r) => r.json())
-      .then((d) => d.success && setPending(d.data ?? []))
-      .catch(() => {});
+export function PendingAliasPrompt({ triggerRefetch }: { triggerRefetch?: number }) {
+  const [pending, setPending] = useState<PendingAlias[]>([]);
+  const pollTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const fetchPending = useCallback(async () => {
+    try {
+      const res = await fetch('/api/aliases');
+      const data = await res.json();
+      if (data.success) setPending(data.data ?? []);
+    } catch (err) {
+      console.error('failed to fetch with error', err);
+    }
   }, []);
+
+  const schedulePolls = useCallback(() => {
+    pollTimers.current.forEach(clearTimeout);
+    pollTimers.current = POST_LOG_DELAYS.map((ms) => setTimeout(fetchPending, ms));
+  }, [fetchPending]);
+
+  // Initial fetch on mount
+  useEffect(() => {
+    fetchPending();
+    return () => pollTimers.current.forEach(clearTimeout);
+  }, [fetchPending]);
+
+  // Re-poll whenever a new log is submitted (triggerRefetch increments)
+  useEffect(() => {
+    if (!triggerRefetch) return;
+    schedulePolls();
+  }, [triggerRefetch, schedulePolls]);
 
   const respond = async (id: string, action: 'confirm' | 'reject') => {
     try {
@@ -56,36 +80,19 @@ export function PendingAliasPrompt() {
             background: 'var(--blue-tint)',
             border: '1px solid var(--blue)',
             borderRadius: 16,
-            borderLeft: `3px solid var(--blue)`,
+            borderLeft: '3px solid var(--blue)',
           }}
         >
           <Group justify="space-between" wrap="nowrap">
             <Group gap="xs" style={{ flex: 1, minWidth: 0 }}>
               <IconSparkles size={16} color="var(--blue)" style={{ flexShrink: 0 }} />
-              <Text
-                size="sm"
-                style={{
-                  color: 'var(--text-primary)',
-                }}
-              >
-                <Text
-                  span
-                  fw={700}
-                  style={{
-                    color: 'var(--blue)',
-                  }}
-                >
-                  "{p.rawKey}"
+              <Text size="sm" style={{ color: 'var(--text-primary)' }}>
+                <Text span fw={700} style={{ color: 'var(--blue)' }}>
+                  &quot;{p.rawKey}&quot;
                 </Text>
                 {' → did you mean '}
-                <Text
-                  span
-                  fw={700}
-                  style={{
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  "{p.suggestedKey}"
+                <Text span fw={700} style={{ color: 'var(--text-primary)' }}>
+                  &quot;{p.suggestedKey}&quot;
                 </Text>
                 ?
               </Text>
