@@ -10,13 +10,13 @@
 
 // ── Config (tune these to find the sweet spot) ──────────────────────────────
 const CACHE_CONFIG = {
-  IMAGE_TTL_HOURS: 24,   // Serve image from cache for this long before revalidating
-  IMAGE_MAX_ENTRIES: 60, // Max images to keep cached (FIFO eviction beyond this)
+    IMAGE_TTL_HOURS: 24,   // Serve image from cache for this long before revalidating
+    IMAGE_MAX_ENTRIES: 60, // Max images to keep cached (FIFO eviction beyond this)
 }
 
 const STATIC_CACHE = 'isignal-static-v2'
-const IMAGE_CACHE  = 'isignal-images-v1'
-const PAGES_CACHE  = 'isignal-pages-v1'
+const IMAGE_CACHE = 'isignal-images-v1'
+const PAGES_CACHE = 'isignal-pages-v1'
 
 const KNOWN_CACHES = [STATIC_CACHE, IMAGE_CACHE, PAGES_CACHE]
 
@@ -120,9 +120,10 @@ self.addEventListener('fetch', (event) => {
             fetch(event.request)
                 .then((response) => {
                     if (response.ok) {
+                        const cloned = response?.clone?.()
                         caches
                             .open(PAGES_CACHE)
-                            .then((cache) => cache.put(event.request, response.clone()))
+                            .then((cache) => cache.put(event.request, cloned))
                     }
                     return response
                 })

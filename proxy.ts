@@ -10,6 +10,7 @@ export default async function proxy(req: NextRequest) {
   const isPublic =
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/login') ||
+    pathname.startsWith('/help') ||
     pathname.startsWith('/_next') ||
     // Static assets served from public/ folder — at root, NOT /public/
     pathname === '/favicon.ico' ||

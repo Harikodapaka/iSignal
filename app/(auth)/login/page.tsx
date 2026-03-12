@@ -1,6 +1,6 @@
 import { auth, signIn } from '@/auth';
 import { Box, Button, Card, Stack, Text, Title } from '@mantine/core';
-import { IconBrandGoogle } from '@tabler/icons-react';
+import { IconBinoculars, IconBrandGoogle } from '@tabler/icons-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -32,7 +32,7 @@ export default async function LoginPage() {
           border: '1px solid rgba(255,255,255,0.1)',
         }}
       >
-        <Stack align="center" gap="xl">
+        <Stack align="center" gap="md">
           {/* Logo */}
           <Stack align="center" gap="xs">
             <Image src="/logo.png" alt="iSignal" width={80} height={80} />
@@ -104,8 +104,12 @@ export default async function LoginPage() {
           </Text>
 
           <Text size="xs" c="dimmed" ta="center">
-            <Link href="/help" style={{ color: 'rgba(255,255,255,0.45)', textDecoration: 'underline' }}>
-              Learn how it works
+            <Link
+              href="/help"
+              style={{ color: 'rgba(255,255,255,0.45)', textDecoration: 'underline', display: 'flex', gap: '4px' }}
+            >
+              <IconBinoculars size={18} color="var(--mantine-color-gray-filled)" aria-hidden="true" /> Learn how it
+              works
             </Link>
           </Text>
         </Stack>
