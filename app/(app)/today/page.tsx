@@ -15,6 +15,7 @@ import { useEvents } from '@/hooks/useEvents';
 import { getBestStreak, getWeeklyScore, getLoggedToday } from '@/utils/stats';
 import { getMetricColor, getMetricEmoji, formatValue } from '@/lib/parser';
 import { formatTime } from '@/utils/date';
+import { useMediaQuery } from '@mantine/hooks';
 
 // ── Activity Rings ────────────────────────────────────────────────────────────
 // Outer  = Streak      (red)    — days in a row logging anything
@@ -114,7 +115,7 @@ function ActivityRings({ streak, score, consistency }: { streak: number; score: 
             <Text
               size="xs"
               style={{
-                width: 68,
+                width: 40,
                 color: 'var(--text-secondary)',
               }}
             >
@@ -150,11 +151,12 @@ function ActivityRings({ streak, score, consistency }: { streak: number; score: 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function TodayPage() {
   const router = useRouter();
+  const isDesktop = useMediaQuery('(min-width: 47.813rem)');
   const { analytics, loading: loadingA, refetch: refetchA } = useAnalytics();
   const { events, refetch: refetchE } = useEvents();
   const [logCount, setLogCount] = useState(0);
 
-  const METRIC_LIMIT = 6;
+  const METRIC_LIMIT = isDesktop ? 8 : 4;
   const visibleMetrics = analytics.slice(0, METRIC_LIMIT);
   const hiddenCount = Math.max(0, analytics.length - METRIC_LIMIT);
 

@@ -241,14 +241,39 @@ export default function TrendsPage() {
                     fillOpacity={0.12}
                     connectNulls
                     tooltipProps={{
-                      labelFormatter: (
-                        _: string,
-                        payload: {
-                          payload?: {
-                            date?: string;
-                          };
-                        }[]
-                      ) => payload?.[0]?.payload?.date ?? '',
+                      content: ({
+                        active,
+                        payload,
+                      }: {
+                        active?: boolean;
+                        payload?: { payload?: { date?: string }; value?: number; color?: string }[];
+                      }) => {
+                        if (!active || !payload?.length) return null;
+                        const item = payload[0];
+                        const date = item?.payload?.date ?? '';
+                        const value = item?.value;
+                        return (
+                          <Box
+                            style={{
+                              background: 'var(--card-bg)',
+                              border: '1px solid var(--card-border)',
+                              borderRadius: 8,
+                              padding: '6px 10px',
+                            }}
+                          >
+                            <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                              {date}
+                            </Text>
+                            <Text size="sm" fw={600} style={{ color: item.color }}>
+                              {value !== null && value !== undefined
+                                ? metric.unit
+                                  ? `${value} ${metric.unit}`
+                                  : String(value)
+                                : '—'}
+                            </Text>
+                          </Box>
+                        );
+                      },
                     }}
                     styles={{
                       root: {

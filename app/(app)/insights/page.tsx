@@ -96,7 +96,7 @@ export default function InsightsPage() {
       const res = await fetch('/api/analytics/summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tz }),
+        body: JSON.stringify({ tz, range }),
       });
       const data = await res.json();
       if (data.success) setSummary(data.data);
@@ -116,13 +116,20 @@ export default function InsightsPage() {
           onChange={(v) => {
             setRange(v as AnalyticsRange);
             setCorrelations([]);
+            setSummary(null);
           }}
           data={[
             { label: '7d', value: '7d' },
             { label: '30d', value: '30d' },
             { label: '3mo', value: '3mo' },
           ]}
-          style={{ flexShrink: 0 }}
+          styles={{
+            root: {
+              background: 'var(--card-bg)',
+              border: '1px solid var(--card-border)',
+              flexShrink: 0,
+            },
+          }}
         />
       </Group>
 
@@ -199,7 +206,7 @@ export default function InsightsPage() {
                 Weekly Summary
               </Text>
               <Text size="xs" style={{ color: 'var(--text-muted)' }}>
-                AI-generated recap of your last 7 days
+                AI-generated recap · {RANGE_LABELS[range]}
               </Text>
             </Box>
           </Group>

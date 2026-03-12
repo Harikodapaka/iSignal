@@ -80,6 +80,26 @@ export function getMetricDisplayName(key: string): string {
     .join(' ');
 }
 
+// ── @ explicit metric syntax ──────────────────────────────────────────────────
+// @metric-key          → boolean, value=true
+// @metric-key 5        → number, no unit
+// @metric-key:L 1      → number, unit=L
+// @metric-key:h 7.5    → number, unit=h (normalised via UNIT_MAP)
+export function parseAtSyntax(raw: string): LogInputParsed | null {
+  const match = raw.trim().match(/^@([\w-]+)(?::(\S+))?\s*([\d.]+)?/i);
+  if (!match) return null;
+
+  const metricKey = match[1].toLowerCase();
+  const rawUnit = match[2] ?? null;
+  const unit = rawUnit ? (UNIT_MAP[rawUnit.toLowerCase()] ?? rawUnit) : undefined;
+  const rawValue = match[3] ?? null;
+
+  if (rawValue !== null) {
+    return { metricKey, value: parseFloat(rawValue), valueType: 'number', unit };
+  }
+  return { metricKey, value: true, valueType: 'boolean', unit };
+}
+
 export function parseLogInput(raw: string, userMetricKeys: string[] = []): LogInputParsed | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;

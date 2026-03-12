@@ -21,6 +21,8 @@ export async function POST(req: NextRequest) {
       .json()
       .catch(() => ({}));
     const tz = typeof body0.tz === 'string' ? body0.tz : null;
+    const range = typeof body0.range === 'string' ? body0.range : '7d';
+    const nDays = range === '3mo' ? 90 : range === '30d' ? 30 : 7;
 
     // Rate limit: 3 summaries per hour
     const rl = await cache.checkRateLimit(userId, 'aiSummary', 3, 3600);
@@ -35,7 +37,7 @@ export async function POST(req: NextRequest) {
     }
 
     await connectDB();
-    const last7 = getLastNDays(7, tz);
+    const last7 = getLastNDays(nDays, tz);
 
     const [events, metrics] = await Promise.all([
       EventModel.find({ userId, date: { $in: last7 } })

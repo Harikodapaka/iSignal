@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { auth } from '@/auth';
 import { connectDB } from '@/lib/mongodb';
 import { cache } from '@/lib/cache';
-import { parseLogInput, getMetricDisplayName, findMetric, KNOWN_METRICS } from '@/lib/parser';
+import { parseLogInput, parseAtSyntax, getMetricDisplayName, findMetric, KNOWN_METRICS } from '@/lib/parser';
 import { toLocalDateString, parseTzParam } from '@/lib/timezone';
 import { aiResolveAlias, aiExtractMetrics, aiExtractContext, getUserMetricKeys } from '@/lib/ai';
 import EventModel from '@/models/Event';
@@ -35,20 +35,121 @@ export async function GET(req: NextRequest) {
       return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const userId = session.user.id;
     await connectDB();
     const { searchParams } = new URL(req.url);
     const tz = parseTzParam(searchParams);
-    const date = searchParams.get('date') ?? toLocalDateString(tz);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
 
-    const events = await EventModel.find({ userId: session.user.id, date })
-      .sort({ timestamp: -1 })
-      .maxTimeMS(5000)
-      .lean();
+    // Range mode — used by the /logs page
+    if (startDate && endDate) {
+      const metricKeysParam = searchParams.get('metricKeys');
+      const metricKeys = metricKeysParam ? metricKeysParam.split(',').filter(Boolean) : [];
+      const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10));
+      const limit = Math.min(100, parseInt(searchParams.get('limit') ?? '50', 10));
+      const query: Record<string, unknown> = { userId, date: { $gte: startDate, $lte: endDate } };
+      if (metricKeys.length === 1) query.metricKey = metricKeys[0];
+      else if (metricKeys.length > 1) query.metricKey = { $in: metricKeys };
+
+      const [events, total] = await Promise.all([
+        EventModel.find(query)
+          .sort({ date: -1, timestamp: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit)
+          .maxTimeMS(5000)
+          .lean(),
+        EventModel.countDocuments(query).maxTimeMS(5000),
+      ]);
+
+      return NextResponse.json({ success: true, data: { events, total, page, limit } });
+    }
+
+    // Single-day mode — today page
+    const date = searchParams.get('date') ?? toLocalDateString(tz);
+    const events = await EventModel.find({ userId, date }).sort({ timestamp: -1 }).maxTimeMS(5000).lean();
 
     return NextResponse.json<ApiResponse<IEvent[]>>({ success: true, data: events as unknown as IEvent[] });
   } catch (err) {
     console.error('GET /api/events error:', err);
     return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Failed to fetch events' }, { status: 500 });
+  }
+}
+
+// ── DELETE /api/events?id=... ─────────────────────────────────────────────────
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const userId = session.user.id;
+    const id = new URL(req.url).searchParams.get('id');
+    if (!id) return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Missing id' }, { status: 400 });
+
+    await connectDB();
+    const event = await EventModel.findOneAndDelete({ _id: id, userId }).lean();
+    if (!event) return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Not found' }, { status: 404 });
+
+    const mk = event.metricKey;
+    await Promise.all([
+      cache.del(`analytics:${userId}:${mk}:7d`),
+      cache.del(`analytics:${userId}:${mk}:30d`),
+      cache.del(`analytics:${userId}:${mk}:3mo`),
+      cache.del(`analytics:${userId}:all:7d`),
+      cache.del(`analytics:${userId}:all:30d`),
+      cache.del(`analytics:${userId}:all:3mo`),
+    ]);
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /api/events error:', err);
+    return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Failed to delete event' }, { status: 500 });
+  }
+}
+
+// ── PATCH /api/events ─────────────────────────────────────────────────────────
+const PatchEventSchema = z.object({
+  id: z.string().min(1),
+  value: z.union([z.number(), z.boolean(), z.string()]),
+});
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const userId = session.user.id;
+    const body = await req.json().catch(() => null);
+    const validated = PatchEventSchema.safeParse(body);
+    if (!validated.success) {
+      return NextResponse.json<ApiResponse<null>>(
+        { success: false, error: validated.error.errors[0].message },
+        { status: 400 }
+      );
+    }
+
+    await connectDB();
+    const { id, value } = validated.data;
+    const event = await EventModel.findOneAndUpdate({ _id: id, userId }, { $set: { value } }, { new: true }).lean();
+
+    if (!event) return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Not found' }, { status: 404 });
+
+    const mk = event.metricKey;
+    await Promise.all([
+      cache.del(`analytics:${userId}:${mk}:7d`),
+      cache.del(`analytics:${userId}:${mk}:30d`),
+      cache.del(`analytics:${userId}:${mk}:3mo`),
+      cache.del(`analytics:${userId}:all:7d`),
+      cache.del(`analytics:${userId}:all:30d`),
+      cache.del(`analytics:${userId}:all:3mo`),
+    ]);
+
+    return NextResponse.json<ApiResponse<IEvent>>({ success: true, data: event as unknown as IEvent });
+  } catch (err) {
+    console.error('PATCH /api/events error:', err);
+    return NextResponse.json<ApiResponse<null>>({ success: false, error: 'Failed to update event' }, { status: 500 });
   }
 }
 
@@ -85,6 +186,54 @@ export async function POST(req: NextRequest) {
 
     const { rawText, tz } = validated.data;
     await connectDB();
+
+    // ── @ explicit metric syntax — bypass parser and AI entirely ─────────────
+    const atParsed = parseAtSyntax(rawText);
+    if (atParsed) {
+      const { metricKey: atKey, value: atValue, valueType: atValueType, unit: atUnit } = atParsed;
+      const resolvedUnit = atUnit ?? null;
+      const isNewMetric = !(await MetricModel.exists({ userId, metricKey: atKey }));
+
+      const event = await EventModel.create({
+        userId,
+        timestamp: new Date().toISOString(),
+        date: toLocalDateString(tz),
+        rawText,
+        metricKey: atKey,
+        value: atValue,
+        valueType: atValueType,
+        unit: resolvedUnit,
+      });
+
+      await MetricModel.findOneAndUpdate(
+        { userId, metricKey: atKey },
+        {
+          $setOnInsert: {
+            displayName: getMetricDisplayName(atKey),
+            valueType: atValueType,
+            unit: resolvedUnit,
+            aggregation: inferAggregation(atValueType, resolvedUnit),
+            pinned: false,
+          },
+          $inc: { frequencyScore: 1 },
+        },
+        { upsert: true }
+      );
+
+      await MetricModel.findOneAndUpdate(
+        { userId, metricKey: atKey, frequencyScore: { $gte: 3 }, pinned: false, userUnpinned: { $ne: true } },
+        { $set: { pinned: true } }
+      );
+
+      await cache.del(`analytics:${userId}:${atKey}`);
+      await cache.del(`metrics:pinned:${userId}`);
+      if (isNewMetric) await cache.invalidateMetricKeys(userId);
+
+      return NextResponse.json<ApiResponse<IEvent>>(
+        { success: true, data: event.toObject() as unknown as IEvent },
+        { status: 201 }
+      );
+    }
 
     // Load user metric keys first so parser can match user-created metrics
     // (e.g. "watched jurassic park movie" → "watched movie")

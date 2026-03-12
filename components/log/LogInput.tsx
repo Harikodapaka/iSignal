@@ -2,10 +2,12 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Box, ActionIcon, Loader, Group, Text, Badge, Stack, UnstyledButton } from '@mantine/core';
-import { IconBolt, IconArrowUp } from '@tabler/icons-react';
+import Link from 'next/link';
+import { Box, ActionIcon, Loader, Group, Text, Badge, Stack, Tooltip, UnstyledButton } from '@mantine/core';
+import { IconBolt, IconArrowUp, IconQuestionMark } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
-import { KNOWN_METRICS, parseLogInput, getMetricDisplayName } from '@/lib/parser';
+import { KNOWN_METRICS, parseLogInput, parseAtSyntax, getMetricDisplayName } from '@/lib/parser';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import type { IMetric } from '@/types';
 
 interface DropdownPos {
@@ -37,6 +39,8 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
   const [dropPos, setDropPos] = useState<DropdownPos | null>(null);
   const [mounted, setMounted] = useState(false);
   const [userMetrics, setUserMetrics] = useState<IMetric[]>([]);
+
+  const online = useOnlineStatus();
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,6 +82,12 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
 
   const updateSuggestions = useCallback(
     (input: string) => {
+      // @ syntax — user is explicitly specifying the metric, no autocomplete needed
+      if (input.trimStart().startsWith('@')) {
+        setSuggestions([]);
+        setOpen(false);
+        return;
+      }
       const parts = input.trim().split(/\s+/);
       const key = parts[0].toLowerCase();
       if (!input.trim() || parts.length > 1) {
@@ -182,7 +192,8 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
       if (!data.success) throw new Error(data.error);
 
       const userKeys = userMetrics.map((m) => m.metricKey);
-      const parsed = parseLogInput(value.trim(), userKeys);
+      const atParsed = parseAtSyntax(value.trim());
+      const parsed = atParsed ?? parseLogInput(value.trim(), userKeys);
       const notifId = `log-${Date.now()}`;
 
       if (!parsed && data.data?.id) {
@@ -288,73 +299,96 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
 
   return (
     <Box ref={wrapRef} style={{ position: 'relative', zIndex: 10 }}>
-      <Box
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          background: 'var(--input-bg)',
-          border: `1.5px solid ${focused ? 'var(--orange)' : 'var(--input-border)'}`,
-          borderRadius: 24,
-          padding: '6px 6px 6px 18px',
-          boxShadow: focused ? '0 0 0 4px var(--orange-glow)' : 'var(--card-shadow)',
-          transition: 'border-color 0.2s, box-shadow 0.2s',
-        }}
-      >
-        <IconBolt size={16} color="var(--orange)" style={{ flexShrink: 0 }} />
-        <input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => handleChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleSubmit();
-            if (e.key === 'Escape') setOpen(false);
-          }}
-          onFocus={() => {
-            setFocused(true);
-            if (value) updateSuggestions(value);
-          }}
-          onBlur={() => {
-            setFocused(false);
-            setTimeout(() => setOpen(false), 150);
-          }}
-          placeholder="sleep 7.5  ·  workout  ·  mood 8  ·  protein 142"
-          autoComplete="off"
-          spellCheck={false}
+      <Group gap="xs" align="center" wrap="nowrap">
+        <Box
           style={{
             flex: 1,
-            background: 'none',
-            border: 'none',
-            outline: 'none',
-            color: 'var(--text-primary)',
-            fontSize: 15,
-            fontFamily: 'inherit',
-            caretColor: 'var(--orange)',
-            padding: '8px 0',
-          }}
-        />
-        <Text
-          size="xs"
-          className="hide-mobile"
-          style={{ whiteSpace: 'nowrap', paddingRight: 4, color: 'var(--text-muted)' }}
-        >
-          ↵ to log
-        </Text>
-        <ActionIcon
-          size={36}
-          radius="xl"
-          variant="filled"
-          onClick={handleSubmit}
-          disabled={!value.trim() || loading}
-          style={{
-            background: value.trim() ? 'var(--orange)' : 'var(--sep2)',
-            transition: 'background 0.2s',
-            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            background: 'var(--input-bg)',
+            border: `1.5px solid ${focused ? 'var(--orange)' : 'var(--input-border)'}`,
+            borderRadius: 24,
+            padding: '6px 6px 6px 18px',
+            boxShadow: focused ? '0 0 0 4px var(--orange-glow)' : 'var(--card-shadow)',
+            transition: 'border-color 0.2s, box-shadow 0.2s',
           }}
         >
-          {loading ? <Loader size={14} color="white" /> : <IconArrowUp size={18} />}
-        </ActionIcon>
-      </Box>
+          <IconBolt size={16} color="var(--orange)" style={{ flexShrink: 0 }} />
+          <input
+            ref={inputRef}
+            value={value}
+            disabled={!online}
+            onChange={(e) => handleChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSubmit();
+              if (e.key === 'Escape') setOpen(false);
+            }}
+            onFocus={() => {
+              setFocused(true);
+              if (value) updateSuggestions(value);
+            }}
+            onBlur={() => {
+              setFocused(false);
+              setTimeout(() => setOpen(false), 150);
+            }}
+            placeholder={online ? 'sleep 7.5  ·  mood 8  ·  @new-metric:L 1' : 'Offline — logging unavailable'}
+            autoComplete="off"
+            spellCheck={false}
+            style={{
+              flex: 1,
+              background: 'none',
+              border: 'none',
+              outline: 'none',
+              color: online ? 'var(--text-primary)' : 'var(--text-muted)',
+              fontSize: 15,
+              fontFamily: 'inherit',
+              caretColor: 'var(--orange)',
+              padding: '8px 0',
+              cursor: online ? 'text' : 'not-allowed',
+            }}
+          />
+          <Text
+            size="xs"
+            className="hide-mobile"
+            style={{ whiteSpace: 'nowrap', paddingRight: 4, color: 'var(--text-muted)' }}
+          >
+            ↵ to log
+          </Text>
+          <ActionIcon
+            size={36}
+            radius="xl"
+            variant="filled"
+            onClick={handleSubmit}
+            disabled={!value.trim() || loading || !online}
+            style={{
+              background: value.trim() ? 'var(--orange)' : 'var(--sep2)',
+              transition: 'background 0.2s',
+              flexShrink: 0,
+            }}
+          >
+            {loading ? <Loader size={14} color="white" /> : <IconArrowUp size={18} />}
+          </ActionIcon>
+        </Box>
+        <Tooltip label="How to log" position="top" withArrow>
+          <ActionIcon
+            component={Link}
+            href="/help"
+            size={40}
+            radius="xl"
+            variant="subtle"
+            color="gray"
+            aria-label="Help"
+            style={{
+              background: 'var(--input-bg)',
+              border: '1.5px solid var(--input-border)',
+              flexShrink: 0,
+            }}
+          >
+            <IconQuestionMark size={18} />
+          </ActionIcon>
+        </Tooltip>
+      </Group>
       {dropdown}
     </Box>
   );

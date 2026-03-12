@@ -3,9 +3,18 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ActionIcon, AppShell, Avatar, Box, Group, NavLink, Stack, Text, UnstyledButton, rem } from '@mantine/core';
-import { IconHome, IconChartLine, IconLayoutGrid, IconBulb, IconLogout, IconRefresh } from '@tabler/icons-react';
+import {
+  IconHome,
+  IconChartLine,
+  IconLayoutGrid,
+  IconBulb,
+  IconLogout,
+  IconRefresh,
+  IconList,
+} from '@tabler/icons-react';
 import { useSession, signOut } from 'next-auth/react';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import Image from 'next/image';
 
 const NAV = [
@@ -13,11 +22,13 @@ const NAV = [
   { href: '/trends', label: 'Trends', Icon: IconChartLine },
   { href: '/metrics', label: 'Metrics', Icon: IconLayoutGrid },
   { href: '/insights', label: 'Insights', Icon: IconBulb },
+  { href: '/logs', label: 'Logs', Icon: IconList },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const online = useOnlineStatus();
 
   return (
     <>
@@ -248,6 +259,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </Group>
           </Group>
 
+          {!online && (
+            <Box
+              style={{
+                background: 'var(--yellow, #f59f00)',
+                color: '#fff',
+                textAlign: 'center',
+                padding: '6px 16px',
+                fontSize: 13,
+                fontWeight: 500,
+                letterSpacing: '0.01em',
+              }}
+            >
+              You&apos;re offline — viewing cached data. Logging is disabled.
+            </Box>
+          )}
           <Box
             className="main-content"
             style={{

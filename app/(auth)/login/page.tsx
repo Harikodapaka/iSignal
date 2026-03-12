@@ -1,9 +1,14 @@
-import { signIn } from '@/auth';
+import { auth, signIn } from '@/auth';
 import { Box, Button, Card, Stack, Text, Title } from '@mantine/core';
 import { IconBrandGoogle } from '@tabler/icons-react';
 import Image from 'next/image';
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const session = await auth();
+  if (session) redirect('/today');
+
   return (
     <Box
       style={{
@@ -96,6 +101,12 @@ export default function LoginPage() {
 
           <Text size="xs" c="dimmed" ta="center">
             Free forever. No credit card required.
+          </Text>
+
+          <Text size="xs" c="dimmed" ta="center">
+            <Link href="/help" style={{ color: 'rgba(255,255,255,0.45)', textDecoration: 'underline' }}>
+              Learn how it works
+            </Link>
           </Text>
         </Stack>
       </Card>
