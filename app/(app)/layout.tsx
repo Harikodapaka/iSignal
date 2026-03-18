@@ -11,6 +11,7 @@ import {
   IconLogout,
   IconRefresh,
   IconList,
+  IconSettings,
 } from '@tabler/icons-react';
 import { useSession, signOut } from 'next-auth/react';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
@@ -23,6 +24,7 @@ const NAV = [
   { href: '/metrics', label: 'Metrics', Icon: IconLayoutGrid },
   { href: '/insights', label: 'Insights', Icon: IconBulb },
   { href: '/logs', label: 'Logs', Icon: IconList },
+  { href: '/settings', label: 'Settings', Icon: IconSettings },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

@@ -1,0 +1,299 @@
+import { connectDB } from '@/lib/mongodb';
+import { cache } from '@/lib/cache';
+import { parseLogInput, parseAtSyntax, getMetricDisplayName, findMetric, KNOWN_METRICS } from '@/lib/parser';
+import { toLocalDateString } from '@/lib/timezone';
+import { aiResolveAlias, aiExtractMetrics, aiExtractContext, getUserMetricKeys } from '@/lib/ai';
+import EventModel from '@/models/Event';
+import MetricModel from '@/models/Metric';
+import AliasModel from '@/models/Alias';
+import PendingAliasModel from '@/models/PendingAlias';
+import type { IEvent } from '@/types';
+
+function inferAggregation(valueType: string, unit?: string | null): 'sum' | 'avg' | 'last' {
+  if (valueType === 'boolean') return 'last';
+  if (!unit) return 'avg';
+  if (unit === '/10') return 'avg';
+  return 'sum';
+}
+
+export type LogResult =
+  | { ok: true; event: IEvent; pending?: false }
+  | { ok: true; id: string; pending: true }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Core logging logic shared by the web app and external voice endpoints.
+ * Handles parsing, event creation, metric upsert, cache invalidation, and background AI.
+ *
+ * @param userId  - authenticated user's MongoDB _id
+ * @param rawText - the log input string (1–200 chars)
+ * @param tz      - IANA timezone string (optional)
+ * @param backgroundFn - optional callback to schedule background work (e.g. waitUntil on Vercel)
+ */
+export async function logEvent(
+  userId: string,
+  rawText: string,
+  tz?: string,
+  backgroundFn?: (p: Promise<unknown>) => void
+): Promise<LogResult> {
+  await connectDB();
+
+  // ── @ explicit metric syntax — bypass parser and AI entirely ───────────
+  const atParsed = parseAtSyntax(rawText);
+  if (atParsed) {
+    const { metricKey: atKey, value: atValue, valueType: atValueType, unit: atUnit } = atParsed;
+    const resolvedUnit = atUnit ?? null;
+    const isNewMetric = !(await MetricModel.exists({ userId, metricKey: atKey }));
+
+    const event = await EventModel.create({
+      userId,
+      timestamp: new Date().toISOString(),
+      date: toLocalDateString(tz),
+      rawText,
+      metricKey: atKey,
+      value: atValue,
+      valueType: atValueType,
+      unit: resolvedUnit,
+    });
+
+    await MetricModel.findOneAndUpdate(
+      { userId, metricKey: atKey },
+      {
+        $setOnInsert: {
+          displayName: getMetricDisplayName(atKey),
+          valueType: atValueType,
+          unit: resolvedUnit,
+          aggregation: inferAggregation(atValueType, resolvedUnit),
+          pinned: false,
+        },
+        $inc: { frequencyScore: 1 },
+      },
+      { upsert: true }
+    );
+
+    await MetricModel.findOneAndUpdate(
+      { userId, metricKey: atKey, frequencyScore: { $gte: 3 }, pinned: false, userUnpinned: { $ne: true } },
+      { $set: { pinned: true } }
+    );
+
+    await cache.del(`analytics:${userId}:${atKey}`);
+    await cache.del(`metrics:pinned:${userId}`);
+    if (isNewMetric) await cache.invalidateMetricKeys(userId);
+
+    return { ok: true, event: event.toObject() as unknown as IEvent };
+  }
+
+  // Load user metric keys so parser can match user-created metrics
+  const userMetricKeys = await getUserMetricKeys(userId);
+  const parsed = parseLogInput(rawText, userMetricKeys);
+
+  // Parser returns null when all tokens are noise words
+  if (!parsed) {
+    const words = rawText.trim().split(/\s+/);
+    if (words.length < 2) {
+      return { ok: false, error: 'Could not parse input', status: 400 };
+    }
+    // Multi-word: save as unknown and let AI figure it out
+    const tempEvent = await EventModel.create({
+      userId,
+      timestamp: new Date().toISOString(),
+      date: toLocalDateString(tz),
+      rawText,
+      metricKey: '__unknown__',
+      value: true,
+      valueType: 'boolean',
+      unit: null,
+    });
+    const extraction = triggerMetricExtraction(String(tempEvent._id), rawText, '__unknown__', userId).catch((err) =>
+      console.error('[events] triggerMetricExtraction failed:', err)
+    );
+    if (backgroundFn) backgroundFn(extraction);
+    return { ok: true, id: String(tempEvent._id), pending: true };
+  }
+
+  // ── Fast path alias resolution (cache → DB, no AI) ──────────────────────
+  const aliasCacheKey = `alias:${userId}:${parsed.metricKey}`;
+  let resolvedKey = parsed.metricKey;
+
+  const cachedAlias = await cache.get<string>(aliasCacheKey);
+  if (cachedAlias) {
+    resolvedKey = cachedAlias;
+  } else {
+    const alias = await AliasModel.findOne({
+      rawKey: parsed.metricKey,
+      $or: [{ userId }, { userId: null }],
+    })
+      .sort({ userId: -1 })
+      .lean();
+
+    if (alias?.canonicalKey) {
+      resolvedKey = alias.canonicalKey;
+      await cache.set(aliasCacheKey, resolvedKey, 3600);
+      await AliasModel.updateOne({ _id: alias._id }, { $inc: { usageCount: 1 } });
+    }
+  }
+
+  // ── Resolve unit ─────────────────────────────────────────────────────────
+  const known = findMetric(resolvedKey);
+  const existingMetric =
+    parsed.unit == null && known?.unit == null
+      ? await MetricModel.findOne({ userId, metricKey: resolvedKey }).lean()
+      : null;
+  const resolvedUnit = parsed.unit ?? known?.unit ?? existingMetric?.unit ?? null;
+
+  // ── Save event immediately ───────────────────────────────────────────────
+  const isNewMetric = !existingMetric && !(await MetricModel.exists({ userId, metricKey: resolvedKey }));
+
+  const event = await EventModel.create({
+    userId,
+    timestamp: new Date().toISOString(),
+    date: toLocalDateString(tz),
+    rawText,
+    metricKey: resolvedKey,
+    value: parsed.value,
+    valueType: parsed.valueType,
+    unit: resolvedUnit,
+  });
+
+  await MetricModel.findOneAndUpdate(
+    { userId, metricKey: resolvedKey },
+    {
+      $setOnInsert: {
+        displayName: known?.displayName ?? getMetricDisplayName(resolvedKey),
+        valueType: parsed.valueType,
+        unit: resolvedUnit,
+        aggregation: known?.aggregation ?? inferAggregation(parsed.valueType, resolvedUnit),
+        pinned: false,
+      },
+      $inc: { frequencyScore: 1 },
+    },
+    { upsert: true, new: true }
+  );
+
+  await MetricModel.findOneAndUpdate(
+    { userId, metricKey: resolvedKey, frequencyScore: { $gte: 3 }, pinned: false, userUnpinned: { $ne: true } },
+    { $set: { pinned: true } }
+  );
+
+  await cache.del(`analytics:${userId}:${resolvedKey}`);
+  await cache.del(`metrics:pinned:${userId}`);
+  if (isNewMetric) await cache.invalidateMetricKeys(userId);
+
+  // ── Background AI — only when parser couldn't resolve the key ───────────
+  const isSentence = rawText.trim().split(/\s+/).length > 3;
+  const isUnknown = !known && !cachedAlias;
+
+  if (isUnknown) {
+    const bgWork = isSentence
+      ? triggerMetricExtraction(String(event._id), rawText, resolvedKey, userId).catch((err) =>
+          console.error('[events] triggerMetricExtraction failed:', err)
+        )
+      : triggerAIResolution(parsed.metricKey, userId).catch((err) =>
+          console.error('[events] triggerAIResolution failed:', err)
+        );
+
+    if (backgroundFn) {
+      backgroundFn(bgWork);
+    }
+
+    console.log(
+      isSentence
+        ? `[events] unknown sentence, scheduling extraction: "${rawText}"`
+        : `[events] unknown token "${resolvedKey}", scheduling alias resolution`
+    );
+  } else {
+    console.log(`[events] known metric "${resolvedKey}" — skipping AI`);
+  }
+
+  return { ok: true, event: event.toObject() as unknown as IEvent };
+}
+
+// ── triggerAIResolution ─────────────────────────────────────────────────────
+async function triggerAIResolution(rawKey: string, userId: string) {
+  const existingKeys = await getUserMetricKeys(userId);
+  if (!existingKeys.length) return;
+
+  const result = await aiResolveAlias(rawKey, existingKeys, userId);
+  if (!result.match) return;
+
+  if (result.confidence >= 0.5) {
+    await PendingAliasModel.findOneAndUpdate(
+      { rawKey, userId, status: 'pending' },
+      { suggestedKey: result.match, confidence: result.confidence, status: 'pending' },
+      { upsert: true }
+    );
+    console.log(`[AI] pending alias: "${rawKey}" → "${result.match}" (${result.confidence})`);
+  }
+}
+
+// ── triggerMetricExtraction ─────────────────────────────────────────────────
+async function triggerMetricExtraction(eventId: string, rawText: string, currentMetricKey: string, userId: string) {
+  console.log(`[AI] triggerMetricExtraction: "${rawText}"`);
+
+  const extracted = await aiExtractMetrics(rawText, userId);
+  if (!extracted.length) return;
+
+  const best = extracted.reduce((a, b) => (a.confidence > b.confidence ? a : b));
+  if (best.confidence < 0.7 || best.metricKey === currentMetricKey) return;
+
+  console.log(`[AI] correcting: "${currentMetricKey}" → "${best.metricKey}" (${best.confidence})`);
+
+  const known = KNOWN_METRICS.find((m) => m.key === best.metricKey);
+
+  const resolvedUnit = best.unit ?? known?.unit ?? null;
+  const resolvedValueType = known?.type ?? (best.value !== null ? 'number' : 'boolean');
+  const resolvedValue = best.value !== null ? best.value : resolvedValueType === 'boolean' ? true : null;
+
+  await EventModel.findByIdAndUpdate(eventId, {
+    $set: {
+      metricKey: best.metricKey,
+      valueType: resolvedValueType,
+      ...(resolvedValue !== null ? { value: resolvedValue } : {}),
+      ...(resolvedUnit !== null ? { unit: resolvedUnit } : {}),
+    },
+  });
+
+  await MetricModel.findOneAndUpdate(
+    { userId, metricKey: best.metricKey },
+    {
+      $setOnInsert: {
+        displayName: known?.displayName ?? getMetricDisplayName(best.metricKey),
+        valueType: resolvedValueType,
+        unit: resolvedUnit,
+        aggregation: known?.aggregation ?? inferAggregation(resolvedValueType, resolvedUnit),
+        pinned: false,
+      },
+      $inc: { frequencyScore: 1 },
+    },
+    { upsert: true, new: true }
+  );
+
+  if (currentMetricKey !== '__unknown__') {
+    await AliasModel.findOneAndUpdate(
+      { rawKey: currentMetricKey.toLowerCase(), userId },
+      { canonicalKey: best.metricKey, createdBy: 'ai', confidence: best.confidence },
+      { upsert: true }
+    );
+  }
+
+  if (currentMetricKey !== '__unknown__') {
+    await MetricModel.deleteOne({ userId, metricKey: currentMetricKey, frequencyScore: { $lte: 1 } });
+  }
+
+  await Promise.all([
+    cache.del(`alias:${userId}:${currentMetricKey}`),
+    cache.del(`analytics:${userId}:${currentMetricKey}`),
+    cache.del(`metrics:pinned:${userId}`),
+    cache.invalidateMetricKeys(userId),
+  ]);
+
+  aiExtractContext(rawText, best.metricKey, userId)
+    .then(async (ctx: { sentiment: string; tags: string[]; note: string | null }) => {
+      if (ctx.sentiment !== 'neutral' || ctx.tags.length > 0 || ctx.note) {
+        await EventModel.findByIdAndUpdate(eventId, {
+          $set: { sentiment: ctx.sentiment, tags: ctx.tags, note: ctx.note },
+        }).catch(() => {});
+      }
+    })
+    .catch(() => {});
+}
