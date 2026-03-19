@@ -9,6 +9,8 @@ export default async function proxy(req: NextRequest) {
   // Public paths — always allow
   const isPublic =
     pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/v/') ||
+    pathname.startsWith('/api/cron/') ||
     pathname.startsWith('/login') ||
     pathname.startsWith('/help') ||
     pathname.startsWith('/_next') ||

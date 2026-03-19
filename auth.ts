@@ -8,8 +8,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [Google],
   callbacks: {
     session({ session, user }) {
-      // Attach MongoDB userId to every session
+      // Attach MongoDB userId and profile image to every session
       session.user.id = user.id;
+      if (user.image) session.user.image = user.image;
       return session;
     },
   },
