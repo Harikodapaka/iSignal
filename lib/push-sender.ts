@@ -1,12 +1,18 @@
 import webpush from 'web-push';
 
-// Configure VAPID details (runs once per cold start)
-if (process.env.VAPID_PRIVATE_KEY && process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+let vapidConfigured = false;
+
+function ensureVapid() {
+  if (vapidConfigured) return;
+  if (!process.env.VAPID_PRIVATE_KEY || !process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+    throw new Error('VAPID keys not configured');
+  }
   webpush.setVapidDetails(
     process.env.VAPID_SUBJECT || 'mailto:noreply@isignal.app',
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
   );
+  vapidConfigured = true;
 }
 
 export interface PushPayload {
@@ -30,6 +36,7 @@ export interface PushSubscriptionData {
  * Returns 'sent' on success, 'gone' if the subscription is expired/invalid.
  */
 export async function sendPush(subscription: PushSubscriptionData, payload: PushPayload): Promise<'sent' | 'gone'> {
+  ensureVapid();
   try {
     await webpush.sendNotification(
       {
