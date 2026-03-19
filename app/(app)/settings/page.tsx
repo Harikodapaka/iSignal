@@ -1,11 +1,24 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Box, Button, CopyButton, ActionIcon, Group, Stack, Text, TextInput, Code, Tooltip } from '@mantine/core';
-import { IconCopy, IconCheck, IconTrash, IconPlus, IconMicrophone } from '@tabler/icons-react';
+import {
+  Box,
+  Button,
+  CopyButton,
+  ActionIcon,
+  Group,
+  Stack,
+  Text,
+  TextInput,
+  Code,
+  Tooltip,
+  Switch,
+} from '@mantine/core';
+import { IconCopy, IconCheck, IconTrash, IconPlus, IconMicrophone, IconBell } from '@tabler/icons-react';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { SectionLabel } from '@/components/ui/SectionLabel';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 interface VoiceToken {
   _id: string;
@@ -23,6 +36,27 @@ export default function SettingsPage() {
   const [justCreated, setJustCreated] = useState<string | null>(null);
 
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const push = usePushNotifications();
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  const sendTestNotification = async () => {
+    setTestSending(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/push/test', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setTestResult(`✅ Sent to ${data.sent}/${data.total} device(s)`);
+      } else {
+        setTestResult(`❌ ${data.error || 'Failed to send'}`);
+      }
+    } catch {
+      setTestResult('❌ Network error');
+    } finally {
+      setTestSending(false);
+    }
+  };
 
   const fetchTokens = useCallback(async () => {
     try {
@@ -212,66 +246,296 @@ export default function SettingsPage() {
           </Stack>
         </GlassCard>
 
+        {/* Push Notifications */}
+        <SectionLabel>Push Notifications</SectionLabel>
+        <GlassCard>
+          <Stack gap="md">
+            <Group gap="xs" align="center">
+              <IconBell size={20} style={{ color: 'var(--orange)' }} />
+              <Text fw={600} size="sm" style={{ color: 'var(--text-primary)' }}>
+                Daily Reminders
+              </Text>
+            </Group>
+
+            {!push.isSupported ? (
+              <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                Push notifications are not supported in this browser. Try installing the app (Add to Home Screen) for
+                full notification support.
+              </Text>
+            ) : (
+              <>
+                <Group justify="space-between" align="center">
+                  <Box style={{ flex: 1 }}>
+                    <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
+                      Get friendly reminders to log your metrics throughout the day.
+                    </Text>
+                  </Box>
+                  <Switch
+                    checked={push.isSubscribed}
+                    onChange={() => (push.isSubscribed ? push.unsubscribe() : push.subscribe())}
+                    disabled={push.loading || push.permission === 'denied'}
+                    size="md"
+                    color="orange"
+                  />
+                </Group>
+
+                {push.permission === 'denied' && (
+                  <Text size="xs" style={{ color: 'var(--red, #e03131)' }}>
+                    Notifications are blocked. Please enable them in your browser settings and reload this page.
+                  </Text>
+                )}
+
+                {push.isSubscribed && (
+                  <>
+                    <Box
+                      p="sm"
+                      style={{
+                        background: 'var(--card-bg)',
+                        borderRadius: 8,
+                        border: '1px solid var(--sidebar-border)',
+                      }}
+                    >
+                      <Stack gap={4}>
+                        <Text size="xs" fw={600} style={{ color: 'var(--text-primary)' }}>
+                          You&apos;ll receive:
+                        </Text>
+                        <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                          ☀️ <strong>6 AM</strong> — Good morning + sleep reminder
+                        </Text>
+                        <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                          💧 <strong>12 PM</strong> — Midday check-in for unlogged metrics
+                        </Text>
+                        <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                          🌙 <strong>7 PM</strong> — Evening wrap-up with missing metrics
+                        </Text>
+                      </Stack>
+                    </Box>
+                    <Group gap="xs" align="center">
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="orange"
+                        onClick={sendTestNotification}
+                        loading={testSending}
+                      >
+                        Send Test Notification
+                      </Button>
+                      {testResult && (
+                        <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                          {testResult}
+                        </Text>
+                      )}
+                    </Group>
+                  </>
+                )}
+              </>
+            )}
+          </Stack>
+        </GlassCard>
+
         {/* Siri Shortcut instructions */}
         <SectionLabel>Siri Shortcut Setup</SectionLabel>
         <GlassCard>
-          <Stack gap="sm">
+          <Stack gap="md">
             <Text size="sm" fw={600} style={{ color: 'var(--text-primary)' }}>
-              How to set up voice logging with Siri
+              Set up voice logging with Siri in 3 steps
             </Text>
-            <Stack gap={4}>
+
+            {/* Step 1 */}
+            <Box
+              p="sm"
+              style={{
+                background: 'var(--orange-tint)',
+                borderRadius: 10,
+                border: '1px solid var(--orange)',
+              }}
+            >
+              <Group gap="xs" mb={6}>
+                <Box
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    background: 'var(--orange)',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  1
+                </Box>
+                <Text size="xs" fw={700} style={{ color: 'var(--orange)' }}>
+                  Create your webhook URL
+                </Text>
+              </Group>
               <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
-                1. Create a webhook URL above and copy it
+                Use the form above to create a webhook URL and <strong>copy it</strong>. You&apos;ll paste this into the
+                Shortcut.
               </Text>
-              <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
-                2. Open the <strong>Shortcuts</strong> app on your iPhone
+            </Box>
+
+            {/* Step 2 */}
+            <Box
+              p="sm"
+              style={{
+                background: 'var(--card-bg)',
+                borderRadius: 10,
+                border: '1px solid var(--sidebar-border)',
+              }}
+            >
+              <Group gap="xs" mb={6}>
+                <Box
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    background: 'var(--text-muted)',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  2
+                </Box>
+                <Text size="xs" fw={700} style={{ color: 'var(--text-primary)' }}>
+                  Create the Siri Shortcut
+                </Text>
+              </Group>
+              <Text size="xs" mb={8} style={{ color: 'var(--text-secondary)' }}>
+                Open the <strong>Shortcuts</strong> app on your iPhone and add these actions in order:
               </Text>
+              <Stack gap={6}>
+                <Group gap="xs" align="flex-start">
+                  <Code style={{ fontSize: 11, minWidth: 18, textAlign: 'center' }}>1</Code>
+                  <Box style={{ flex: 1 }}>
+                    <Text size="xs" fw={600} style={{ color: 'var(--text-primary)' }}>
+                      Dictate Text
+                    </Text>
+                    <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                      Captures your voice input when triggered
+                    </Text>
+                  </Box>
+                </Group>
+                <Group gap="xs" align="flex-start">
+                  <Code style={{ fontSize: 11, minWidth: 18, textAlign: 'center' }}>2</Code>
+                  <Box style={{ flex: 1 }}>
+                    <Text size="xs" fw={600} style={{ color: 'var(--text-primary)' }}>
+                      URL
+                    </Text>
+                    <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                      Paste your webhook URL from step 1
+                    </Text>
+                  </Box>
+                </Group>
+                <Group gap="xs" align="flex-start">
+                  <Code style={{ fontSize: 11, minWidth: 18, textAlign: 'center' }}>3</Code>
+                  <Box style={{ flex: 1 }}>
+                    <Text size="xs" fw={600} style={{ color: 'var(--text-primary)' }}>
+                      Get Contents of URL
+                    </Text>
+                    <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                      Method: <strong>POST</strong> · Body: <strong>JSON</strong>
+                    </Text>
+                    <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                      Add key <Code style={{ fontSize: 11 }}>text</Code> with value <strong>Dictated Text</strong>{' '}
+                      (select from magic variables)
+                    </Text>
+                  </Box>
+                </Group>
+                <Group gap="xs" align="flex-start">
+                  <Code style={{ fontSize: 11, minWidth: 18, textAlign: 'center' }}>4</Code>
+                  <Box style={{ flex: 1 }}>
+                    <Text size="xs" fw={600} style={{ color: 'var(--text-primary)' }}>
+                      Speak Text
+                    </Text>
+                    <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                      Pass <Code style={{ fontSize: 11 }}>Contents of URL</Code> — Siri will read the confirmation aloud
+                    </Text>
+                  </Box>
+                </Group>
+              </Stack>
+            </Box>
+
+            {/* Step 3 */}
+            <Box
+              p="sm"
+              style={{
+                background: 'var(--card-bg)',
+                borderRadius: 10,
+                border: '1px solid var(--sidebar-border)',
+              }}
+            >
+              <Group gap="xs" mb={6}>
+                <Box
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    background: 'var(--text-muted)',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  3
+                </Box>
+                <Text size="xs" fw={700} style={{ color: 'var(--text-primary)' }}>
+                  Name it &amp; test
+                </Text>
+              </Group>
               <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
-                3. Create a new shortcut with these actions:
+                Name the shortcut (e.g. <strong>&quot;Log iSignal&quot;</strong>), then say:
               </Text>
               <Box
-                ml="md"
-                p="sm"
+                mt={6}
+                p="xs"
                 style={{
-                  background: 'var(--card-bg)',
+                  background: 'var(--orange-tint)',
                   borderRadius: 8,
-                  border: '1px solid var(--sidebar-border)',
+                  textAlign: 'center',
                 }}
               >
-                <Stack gap={2}>
-                  <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
-                    a. <strong>Dictate Text</strong> — captures your voice
-                  </Text>
-                  <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
-                    b. <strong>URL</strong> — paste your webhook URL
-                  </Text>
-                  <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
-                    c. <strong>Get Contents of URL</strong>:
-                  </Text>
-                  <Text size="xs" ml="md" style={{ color: 'var(--text-secondary)' }}>
-                    Method: <strong>POST</strong>
-                  </Text>
-                  <Text size="xs" ml="md" style={{ color: 'var(--text-secondary)' }}>
-                    Request Body: <strong>JSON</strong>
-                  </Text>
-                  <Text size="xs" ml="md" style={{ color: 'var(--text-secondary)' }}>
-                    Key: <Code style={{ fontSize: 11 }}>text</Code> Value: <strong>Dictated Text</strong>
-                  </Text>
-                  <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
-                    d. <strong>Get Dictionary Value</strong> for key <Code style={{ fontSize: 11 }}>message</Code>
-                  </Text>
-                  <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
-                    e. <strong>Show Result</strong> (or <strong>Speak Text</strong>)
-                  </Text>
-                </Stack>
+                <Text size="sm" fw={600} style={{ color: 'var(--orange)' }}>
+                  &quot;Hey Siri, Log iSignal&quot;
+                </Text>
               </Box>
-              <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
-                4. Name the shortcut (e.g. &quot;Log iSignal&quot;)
+              <Text size="xs" mt={6} style={{ color: 'var(--text-muted)' }}>
+                Siri will listen, log your entry, and speak the confirmation (e.g. &quot;Logged 7.5 hours of
+                sleep&quot;).
               </Text>
-              <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
-                5. Say &quot;Hey Siri, Log iSignal&quot; and dictate your entry
+            </Box>
+
+            {/* Example phrases */}
+            <Box>
+              <Text size="xs" fw={600} mb={4} style={{ color: 'var(--text-primary)' }}>
+                Example voice entries
               </Text>
-            </Stack>
+              <Group gap={6} wrap="wrap">
+                {['sleep 7.5 hours', 'mood 8', 'weight 72 kg', 'water 2 litres', 'ran 5k in 25 min'].map((phrase) => (
+                  <Code
+                    key={phrase}
+                    style={{
+                      fontSize: 11,
+                      background: 'var(--card-bg)',
+                      border: '1px solid var(--sidebar-border)',
+                      borderRadius: 6,
+                      padding: '3px 8px',
+                    }}
+                  >
+                    {phrase}
+                  </Code>
+                ))}
+              </Group>
+            </Box>
           </Stack>
         </GlassCard>
       </Stack>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ActionIcon, AppShell, Avatar, Box, Group, NavLink, Stack, Text, UnstyledButton, rem } from '@mantine/core';
@@ -12,6 +13,7 @@ import {
   IconRefresh,
   IconList,
   IconSettings,
+  IconUser,
 } from '@tabler/icons-react';
 import { useSession, signOut } from 'next-auth/react';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
@@ -24,13 +26,26 @@ const NAV = [
   { href: '/metrics', label: 'Metrics', Icon: IconLayoutGrid },
   { href: '/insights', label: 'Insights', Icon: IconBulb },
   { href: '/logs', label: 'Logs', Icon: IconList },
-  { href: '/settings', label: 'Settings', Icon: IconSettings },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const online = useOnlineStatus();
+  const [profileOpen, setProfileOpen] = useState(false);
+
+  // Close profile overlay on outside click
+  useEffect(() => {
+    if (!profileOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-profile-menu]')) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [profileOpen]);
 
   return (
     <>
@@ -127,21 +142,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               })}
             </Stack>
 
-            {/* User */}
+            {/* User / Profile popover */}
             <Box
               p="sm"
+              data-profile-menu
               style={{
                 borderTop: '1px solid var(--sidebar-border)',
+                position: 'relative',
               }}
             >
-              <UnstyledButton
-                onClick={() =>
-                  signOut({
-                    callbackUrl: '/login',
-                  })
-                }
-                style={{ width: '100%' }}
-              >
+              <UnstyledButton onClick={() => setProfileOpen((o) => !o)} style={{ width: '100%' }}>
                 <Group
                   gap="sm"
                   p="sm"
@@ -177,15 +187,61 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     </Text>
                     <Text
                       size="xs"
+                      truncate
                       style={{
                         color: 'var(--text-muted)',
                       }}
                     >
-                      Sign out
+                      {session?.user?.email ?? ''}
                     </Text>
                   </Box>
                 </Group>
               </UnstyledButton>
+
+              {/* Profile overlay */}
+              {profileOpen && (
+                <Box
+                  style={{
+                    position: 'absolute',
+                    bottom: '100%',
+                    left: 8,
+                    right: 8,
+                    marginBottom: 4,
+                    background: 'var(--card-bg)',
+                    border: '1px solid var(--sidebar-border)',
+                    borderRadius: 10,
+                    boxShadow: '0 4px 24px rgba(0,0,0,0.15)',
+                    overflow: 'hidden',
+                    zIndex: 300,
+                  }}
+                >
+                  <NavLink
+                    component={Link}
+                    href="/settings"
+                    label="Settings"
+                    leftSection={<IconSettings size={16} />}
+                    onClick={() => setProfileOpen(false)}
+                    styles={{
+                      root: {
+                        fontSize: 13,
+                        color: 'var(--text-secondary)',
+                        '&:hover': { background: 'var(--orange-tint)' },
+                      },
+                    }}
+                  />
+                  <NavLink
+                    label="Sign out"
+                    leftSection={<IconLogout size={16} />}
+                    onClick={() => signOut({ callbackUrl: '/login' })}
+                    styles={{
+                      root: {
+                        fontSize: 13,
+                        color: 'var(--red, #e03131)',
+                      },
+                    }}
+                  />
+                </Box>
+              )}
             </Box>
           </Stack>
         </AppShell.Navbar>
@@ -244,20 +300,69 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <IconRefresh size={18} />
               </ActionIcon>
               <ThemeSwitcher />
-              <ActionIcon
-                size="lg"
-                radius="md"
-                aria-label="Logout"
-                style={{ cursor: 'pointer' }}
-                onClick={() =>
-                  signOut({
-                    callbackUrl: '/login',
-                  })
-                }
-                variant="outline"
-              >
-                <IconLogout size={18} />
-              </ActionIcon>
+              <Box data-profile-menu style={{ position: 'relative' }}>
+                <ActionIcon
+                  size="lg"
+                  radius="md"
+                  variant="outline"
+                  onClick={() => setProfileOpen((o) => !o)}
+                  aria-label="Profile menu"
+                >
+                  <IconUser size={18} />
+                </ActionIcon>
+
+                {/* Mobile profile overlay */}
+                {profileOpen && (
+                  <Box
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      right: 0,
+                      marginTop: 8,
+                      width: 200,
+                      background: 'var(--card-bg)',
+                      border: '1px solid var(--sidebar-border)',
+                      borderRadius: 10,
+                      boxShadow: '0 4px 24px rgba(0,0,0,0.15)',
+                      overflow: 'hidden',
+                      zIndex: 300,
+                    }}
+                  >
+                    <Box p="sm" style={{ borderBottom: '1px solid var(--sidebar-border)' }}>
+                      <Text size="sm" fw={600} truncate style={{ color: 'var(--text-primary)' }}>
+                        {session?.user?.name ?? 'User'}
+                      </Text>
+                      <Text size="xs" truncate style={{ color: 'var(--text-muted)' }}>
+                        {session?.user?.email ?? ''}
+                      </Text>
+                    </Box>
+                    <NavLink
+                      component={Link}
+                      href="/settings"
+                      label="Settings"
+                      leftSection={<IconSettings size={16} />}
+                      onClick={() => setProfileOpen(false)}
+                      styles={{
+                        root: {
+                          fontSize: 13,
+                          color: 'var(--text-secondary)',
+                        },
+                      }}
+                    />
+                    <NavLink
+                      label="Sign out"
+                      leftSection={<IconLogout size={16} />}
+                      onClick={() => signOut({ callbackUrl: '/login' })}
+                      styles={{
+                        root: {
+                          fontSize: 13,
+                          color: 'var(--red, #e03131)',
+                        },
+                      }}
+                    />
+                  </Box>
+                )}
+              </Box>
             </Group>
           </Group>
 
