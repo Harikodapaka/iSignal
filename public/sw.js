@@ -1,7 +1,7 @@
 /* global self, caches, URL, fetch, Response */
 
 // iSignal Service Worker
-// Version: 3.0.0
+// Version: 3.1.0
 //
 // Strategy:
 //  - Cache-first forever for _next/static/* (content-hashed)
@@ -139,4 +139,51 @@ self.addEventListener('fetch', (event) => {
         )
         return
     }
+})
+
+// ── Push Notifications ───────────────────────────────────────────────────────
+self.addEventListener('push', (event) => {
+    if (!event.data) return
+
+    let payload
+    try {
+        payload = event.data.json()
+    } catch {
+        payload = {
+            title: 'iSignal',
+            body: event.data.text(),
+        }
+    }
+
+    const { title, body, icon, badge, url } = payload
+
+    event.waitUntil(
+        self.registration.showNotification(title || 'iSignal', {
+            body: body || '',
+            icon: icon || '/android-icon-192x192.png',
+            badge: badge || '/favicon-96x96.png',
+            data: { url: url || '/today' },
+            vibrate: [100, 50, 100],
+        })
+    )
+})
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close()
+
+    const url = event.notification.data?.url || '/today'
+
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+            // Focus existing tab if open
+            for (const client of clients) {
+                if (client.url.includes(self.location.origin) && 'focus' in client) {
+                    client.navigate(url)
+                    return client.focus()
+                }
+            }
+            // Otherwise open a new tab
+            return self.clients.openWindow(url)
+        })
+    )
 })
