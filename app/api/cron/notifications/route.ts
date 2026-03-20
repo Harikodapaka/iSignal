@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import PushSubscription from '@/models/PushSubscription';
+import MetricModel from '@/models/Metric';
+import EventModel from '@/models/Event';
 import { sendPush } from '@/lib/push-sender';
-import { buildNotificationContext, getNotificationWindow } from '@/lib/notification-context';
-import { getMorningMessage, getMiddayMessage, getEveningMessage } from '@/lib/notification-messages';
+import { buildNotificationContext, getNotificationWindow, getLocalHour } from '@/lib/notification-context';
+import {
+  getMorningMessage,
+  getMiddayMessage,
+  getEveningMessage,
+  getMetricReminderMessage,
+} from '@/lib/notification-messages';
 import { toLocalDateString } from '@/lib/timezone';
 
 export const maxDuration = 30; // Allow up to 30s for batch sending
@@ -99,6 +106,55 @@ export async function POST(req: NextRequest) {
             // Subscription expired — clean up
             await PushSubscription.deleteOne({ _id: sub._id });
             cleaned++;
+          }
+        }
+
+        // ── Per-metric reminders ──
+        const localHour = getLocalHour(tz);
+        const metricsWithReminders = await MetricModel.find({
+          userId,
+          'reminder.enabled': true,
+          'reminder.times': localHour,
+        })
+          .select('metricKey displayName')
+          .lean()
+          .maxTimeMS(5000);
+
+        if (metricsWithReminders.length > 0) {
+          // Check which metrics have already been logged today
+          const todayEvents = await EventModel.find({ userId, date: today }).select('metricKey').lean().maxTimeMS(5000);
+          const loggedKeys = new Set(todayEvents.map((e) => (e as { metricKey: string }).metricKey));
+
+          for (const metric of metricsWithReminders) {
+            const mk = metric as { metricKey: string; displayName: string };
+            if (loggedKeys.has(mk.metricKey)) continue; // Already logged today
+
+            const metricNotifKey = `metric:${mk.metricKey}:${localHour}:${today}`;
+            const alreadySent = (userSubs[0].lastNotifiedAt as Record<string, string>)?.[metricNotifKey];
+            if (alreadySent) continue;
+
+            const metricMessage = getMetricReminderMessage(mk.metricKey, mk.displayName);
+
+            for (const sub of userSubs) {
+              const result = await sendPush(
+                {
+                  endpoint: sub.endpoint as string,
+                  keys: sub.keys as { p256dh: string; auth: string },
+                },
+                metricMessage
+              );
+
+              if (result === 'sent') {
+                sent++;
+                await PushSubscription.updateOne(
+                  { _id: sub._id },
+                  { $set: { [`lastNotifiedAt.${metricNotifKey}`]: new Date() } }
+                );
+              } else if (result === 'gone') {
+                await PushSubscription.deleteOne({ _id: sub._id });
+                cleaned++;
+              }
+            }
           }
         }
       })

@@ -48,6 +48,11 @@ export async function GET(req: NextRequest) {
   }
 }
 
+const ReminderSchema = z.object({
+  enabled: z.boolean(),
+  times: z.array(z.number().int().min(0).max(23)).max(5),
+});
+
 const PatchSchema = z.object({
   metricKey: z.string().min(1),
   pinned: z.boolean().optional(),
@@ -55,6 +60,7 @@ const PatchSchema = z.object({
   unit: z.string().max(20).optional().nullable(),
   aggregation: z.enum(['sum', 'avg', 'last']).optional(),
   valueType: z.enum(['boolean', 'number', 'text']).optional(),
+  reminder: ReminderSchema.optional(),
 });
 
 // ── PATCH /api/metrics — update any editable field ──
@@ -87,6 +93,7 @@ export async function PATCH(req: NextRequest) {
     if (updates.unit !== undefined) $set.unit = updates.unit;
     if (updates.aggregation !== undefined) $set.aggregation = updates.aggregation;
     if (updates.valueType !== undefined) $set.valueType = updates.valueType;
+    if (updates.reminder !== undefined) $set.reminder = updates.reminder;
 
     const metric = await MetricModel.findOneAndUpdate({ userId, metricKey }, { $set }, { new: true });
 

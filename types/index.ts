@@ -37,6 +37,10 @@ export interface IMetric {
   pinned: boolean;
   userUnpinned: boolean;
   frequencyScore: number;
+  reminder?: {
+    enabled: boolean;
+    times: number[];
+  };
   createdAt?: string;
 }
 

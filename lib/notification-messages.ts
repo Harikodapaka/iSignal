@@ -118,6 +118,29 @@ export function getMiddayMessage(ctx: NotificationContext): PushPayload {
   };
 }
 
+// ── Per-metric reminders ────────────────────────────────────────────────────
+
+const METRIC_REMINDER_GENERIC = [
+  { title: 'Reminder: {name} 📝', body: "You haven't logged {name} today. Quick update?" },
+  { title: "Don't forget {name}! 🔔", body: "Your {name} tracker is waiting for today's entry." },
+  { title: '{name} check-in 📊', body: 'A quick {name} log keeps your data streak alive!' },
+];
+
+export function getMetricReminderMessage(metricKey: string, displayName: string): PushPayload {
+  // Use specific templates if available, otherwise generic
+  if (MIDDAY_TEMPLATES[metricKey]) {
+    const msg = pick(MIDDAY_TEMPLATES[metricKey]);
+    return { title: msg.title, body: msg.body, url: '/today' };
+  }
+
+  const msg = pick(METRIC_REMINDER_GENERIC);
+  return {
+    title: msg.title.replace('{name}', displayName),
+    body: msg.body.replace('{name}', displayName),
+    url: '/today',
+  };
+}
+
 // ── Evening (7 PM) — wrap-up ────────────────────────────────────────────────
 
 export function getEveningMessage(ctx: NotificationContext): PushPayload {

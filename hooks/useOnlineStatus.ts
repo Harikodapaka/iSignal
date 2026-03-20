@@ -3,9 +3,12 @@
 import { useState, useEffect } from 'react';
 
 export function useOnlineStatus(): boolean {
-  const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  // Always initialize as `true` to match server render and avoid hydration mismatch
+  const [online, setOnline] = useState(true);
 
   useEffect(() => {
+    // Sync with actual browser status after hydration
+    setOnline(navigator.onLine);
     const on = () => setOnline(true);
     const off = () => setOnline(false);
     window.addEventListener('online', on);

@@ -45,9 +45,11 @@ export function LogInput({ onLogged }: { onLogged?: () => void }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Portal only works client-side
+  // Portal only works client-side + auto-focus the input
   useEffect(() => {
     setMounted(true);
+    // Auto-focus the log input so users know where to start
+    setTimeout(() => inputRef.current?.focus(), 400);
   }, []);
 
   // Fetch user metrics once on mount for autocomplete + parser hints

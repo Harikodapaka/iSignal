@@ -1,5 +1,10 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
+export interface IMetricReminder {
+  enabled: boolean;
+  times: number[]; // hours (0-23) when to send reminders
+}
+
 export interface IMetricDocument extends Document {
   userId: string;
   metricKey: string;
@@ -10,6 +15,7 @@ export interface IMetricDocument extends Document {
   pinned: boolean;
   userUnpinned: boolean;
   frequencyScore: number;
+  reminder?: IMetricReminder;
 }
 
 const MetricSchema = new Schema<IMetricDocument>(
@@ -23,6 +29,13 @@ const MetricSchema = new Schema<IMetricDocument>(
     pinned: { type: Boolean, default: false },
     userUnpinned: { type: Boolean, default: false }, // user manually unpinned — never auto-re-pin
     frequencyScore: { type: Number, default: 1 },
+    reminder: {
+      type: {
+        enabled: { type: Boolean, default: false },
+        times: { type: [Number], default: [] },
+      },
+      default: undefined,
+    },
   },
   { timestamps: true }
 );

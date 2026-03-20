@@ -4,17 +4,17 @@
 
 ## Tier 1 — High Impact, Buildable Now _(This Sprint)_
 
-- [ ] **1. Voice logging via Siri Shortcut** (~1 day)
+- [ x ] **1. Voice logging via Siri Shortcut** (~1 day)
   - iOS Shortcut → POST to API
   - Biggest friction reducer — log without opening the app
 
-- [ ] **2. Daily digest push notification** (~2 days)
+- [ x ] **2. Daily digest push notification** (~2 days)
   - 9am: streak, recent mood avg, missed metrics
   - Wire up existing SW stub. Core retention feature
 
-- [ ] **3. Streak + gamification on Today page** (~1 day)
-  - Visible streak counter, weekly ring fill, "best week" banner
-  - `currentStreak` + `weeklyScore` already computed
+- [ ] **3. Motivational nudges on Today page** (~0.5 day)
+  - Contextual encouragement based on streak, consistency, and time of day
+  - Streak counter + gamification deferred to later sprint
 
 - [ ] **4. Smart per-metric reminders** (~3 days)
   - "You usually log water at 2pm." Learned from logging history
