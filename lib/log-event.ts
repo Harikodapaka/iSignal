@@ -161,14 +161,42 @@ export async function logEvent(
 
   // ── Resolve unit ─────────────────────────────────────────────────────────
   const known = findMetric(resolvedKey);
-  const existingMetric =
-    parsed.unit == null && known?.unit == null
-      ? await MetricModel.findOne({ userId, metricKey: resolvedKey }).lean()
-      : null;
-  const resolvedUnit = parsed.unit ?? known?.unit ?? existingMetric?.unit ?? null;
+  const existingMetric = await MetricModel.findOne({ userId, metricKey: resolvedKey }).lean();
+  const metricExpectedUnit = known?.unit ?? existingMetric?.unit ?? null;
+  const resolvedUnit = parsed.unit ?? metricExpectedUnit;
+
+  // ── Unit conversion for user-customized metrics ────────────────────────
+  // If the user's metric expects a different unit than what was parsed,
+  // convert (e.g. user typed "workout 80mins" but metric unit is "h" → 1.33h)
+  let finalValue = parsed.value;
+  let finalUnit = resolvedUnit;
+  if (typeof parsed.value === 'number' && parsed.unit && metricExpectedUnit && parsed.unit !== metricExpectedUnit) {
+    const UNIT_CONVERSIONS: Record<string, Record<string, number>> = {
+      min: { h: 1 / 60, sec: 60 },
+      h: { min: 60, sec: 3600 },
+      sec: { min: 1 / 60, h: 1 / 3600 },
+      kg: { lb: 2.20462, g: 1000, oz: 35.274 },
+      lb: { kg: 0.453592, g: 453.592, oz: 16 },
+      g: { kg: 0.001, lb: 0.00220462, oz: 0.035274 },
+      oz: { g: 28.3495, kg: 0.0283495, lb: 0.0625 },
+      L: { ml: 1000, cup: 4.22675, glass: 4 },
+      ml: { L: 0.001, cup: 0.00422675, glass: 0.004 },
+      cup: { L: 0.236588, ml: 236.588, glass: 1 },
+      glass: { L: 0.25, ml: 250, cup: 1 },
+      km: { mi: 0.621371, m: 1000 },
+      mi: { km: 1.60934, m: 1609.34 },
+      m: { km: 0.001, mi: 0.000621371 },
+    };
+    const factor = UNIT_CONVERSIONS[parsed.unit]?.[metricExpectedUnit];
+    if (factor !== undefined) {
+      finalValue = Math.round(parsed.value * factor * 100) / 100;
+      finalUnit = metricExpectedUnit;
+      console.log(`[events] unit conversion: ${parsed.value} ${parsed.unit} → ${finalValue} ${finalUnit}`);
+    }
+  }
 
   // ── Save event immediately ───────────────────────────────────────────────
-  const isNewMetric = !existingMetric && !(await MetricModel.exists({ userId, metricKey: resolvedKey }));
+  const isNewMetric = !existingMetric;
 
   const event = await EventModel.create({
     userId,
@@ -176,9 +204,9 @@ export async function logEvent(
     date: toLocalDateString(tz),
     rawText,
     metricKey: resolvedKey,
-    value: parsed.value,
+    value: finalValue,
     valueType: parsed.valueType,
-    unit: resolvedUnit,
+    unit: finalUnit,
   });
 
   await MetricModel.findOneAndUpdate(
@@ -187,8 +215,8 @@ export async function logEvent(
       $setOnInsert: {
         displayName: known?.displayName ?? getMetricDisplayName(resolvedKey),
         valueType: parsed.valueType,
-        unit: resolvedUnit,
-        aggregation: known?.aggregation ?? inferAggregation(parsed.valueType, resolvedUnit),
+        unit: finalUnit,
+        aggregation: known?.aggregation ?? inferAggregation(parsed.valueType, finalUnit),
         pinned: false,
       },
       $inc: { frequencyScore: 1 },
