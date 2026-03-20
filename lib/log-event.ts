@@ -1,6 +1,13 @@
 import { connectDB } from '@/lib/mongodb';
 import { cache } from '@/lib/cache';
-import { parseLogInput, parseAtSyntax, getMetricDisplayName, findMetric, KNOWN_METRICS } from '@/lib/parser';
+import {
+  parseLogInput,
+  parseLogInputMulti,
+  parseAtSyntax,
+  getMetricDisplayName,
+  findMetric,
+  KNOWN_METRICS,
+} from '@/lib/parser';
 import { toLocalDateString } from '@/lib/timezone';
 import { aiResolveAlias, aiExtractMetrics, aiExtractContext, getUserMetricKeys } from '@/lib/ai';
 import EventModel from '@/models/Event';
@@ -17,7 +24,7 @@ function inferAggregation(valueType: string, unit?: string | null): 'sum' | 'avg
 }
 
 export type LogResult =
-  | { ok: true; event: IEvent; pending?: false }
+  | { ok: true; event: IEvent; pending?: false; multi?: LogResult[] }
   | { ok: true; id: string; pending: true }
   | { ok: false; error: string; status: number };
 
@@ -85,6 +92,25 @@ export async function logEvent(
 
   // Load user metric keys so parser can match user-created metrics
   const userMetricKeys = await getUserMetricKeys(userId);
+
+  // ── Multi-metric: split on "and", commas, etc. ─────────────────────────────
+  const multiParsed = parseLogInputMulti(rawText, userMetricKeys);
+  if (multiParsed.length > 1) {
+    const results: LogResult[] = [];
+    for (const p of multiParsed) {
+      // Re-run logEvent for each parsed segment using a synthetic single-metric input
+      const syntheticInput = p.unit ? `@${p.metricKey}:${p.unit} ${p.value}` : `@${p.metricKey} ${p.value}`;
+      const result = await logEvent(userId, syntheticInput, tz, backgroundFn);
+      results.push(result);
+    }
+    // Return the first successful result with all multi results attached
+    const firstOk = results.find((r) => r.ok);
+    if (firstOk && firstOk.ok && 'event' in firstOk) {
+      return { ...firstOk, multi: results };
+    }
+    return results[0];
+  }
+
   const parsed = parseLogInput(rawText, userMetricKeys);
 
   // Parser returns null when all tokens are noise words

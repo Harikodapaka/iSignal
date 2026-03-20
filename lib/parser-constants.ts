@@ -26,6 +26,11 @@ export const UNIT_MAP: Record<string, string> = {
   steps: 'steps',
   x: 'x', times: 'x', reps: 'reps', sets: 'sets',
   percent: '%', '%': '%',
+  // servings (converted to real units via SERVING_CONVERSIONS in parser)
+  scoop: 'scoop', scoops: 'scoop',
+  serving: 'serving', servings: 'serving',
+  shot: 'shot', shots: 'shot',
+  can: 'can', cans: 'can',
 }
 
 // ── Noise words ───────────────────────────────────────────────────────────────

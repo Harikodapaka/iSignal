@@ -9,6 +9,8 @@
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,css,md}\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prepare": "husky"
   },
   "dependencies": {
@@ -46,7 +48,8 @@
     "postcss-simple-vars": "^7.0.0",
     "prettier": "^3.8.1",
     "typescript": "^5.0.0",
-    "typescript-eslint": "^8.56.1"
+    "typescript-eslint": "^8.56.1",
+    "vitest": "^4.1.0"
   },
   "overrides": {
     "next-auth": {
