@@ -128,8 +128,8 @@ export function getLocalHour(tz: string): number {
 export function getNotificationWindow(tz: string): 'morning' | 'midday' | 'evening' | null {
   const hour = getLocalHour(tz);
 
-  if (hour === 6) return 'morning';
-  if (hour === 12) return 'midday';
-  if (hour === 19) return 'evening'; // 7 PM
+  if (hour >= 6 && hour <= 8) return 'morning';
+  if (hour >= 12 && hour <= 13) return 'midday';
+  if (hour >= 19 && hour <= 20) return 'evening'; // 7-8 PM
   return null;
 }

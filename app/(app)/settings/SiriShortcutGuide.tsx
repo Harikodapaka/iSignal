@@ -5,8 +5,16 @@ import { GlassCard } from '@/components/ui/GlassCard';
 
 const SHORTCUT_STEPS = [
   {
+    title: 'Speak Text',
+    description: (
+      <>
+        Type: <Code style={{ fontSize: 11 }}>What do you want to log?</Code>
+      </>
+    ),
+  },
+  {
     title: 'Dictate Text',
-    description: 'Captures your voice input when triggered',
+    description: 'Siri listens for your voice input after the prompt',
   },
   {
     title: 'URL',
@@ -25,12 +33,27 @@ const SHORTCUT_STEPS = [
     ],
   },
   {
-    title: 'Speak Text',
+    title: 'Get Dictionary Value',
     description: (
       <>
-        Pass <Code style={{ fontSize: 11 }}>Contents of URL</Code> — Siri will read the confirmation aloud
+        Get value for key <Code style={{ fontSize: 11 }}>message</Code> from <strong>Contents of URL</strong>
       </>
     ),
+  },
+  {
+    title: 'If',
+    lines: [
+      <>
+        Input: <Code style={{ fontSize: 11 }}>Dictionary Value</Code> · Condition: <strong>has any value</strong>
+      </>,
+      <>
+        → <strong>Speak Text:</strong> <Code style={{ fontSize: 11 }}>Done</Code>
+      </>,
+      <>
+        <strong>Otherwise</strong> → <strong>Speak Text:</strong>{' '}
+        <Code style={{ fontSize: 11 }}>Something went wrong</Code>
+      </>,
+    ],
   },
 ];
 
@@ -62,7 +85,7 @@ export function SiriShortcutGuide() {
     <GlassCard>
       <Stack gap="md">
         <Text size="sm" fw={600} style={{ color: 'var(--text-primary)' }}>
-          Set up voice logging with Siri in 3 steps
+          Set up voice logging with Siri
         </Text>
 
         {/* Step 1 */}
@@ -144,7 +167,7 @@ export function SiriShortcutGuide() {
             </Text>
           </Group>
           <Text size="xs" style={{ color: 'var(--text-secondary)' }}>
-            Name the shortcut (e.g. <strong>&quot;Log iSignal&quot;</strong>), then say:
+            Name the shortcut <strong>&quot;Log to iSignal&quot;</strong>, then say:
           </Text>
           <Box
             mt={6}
@@ -156,11 +179,12 @@ export function SiriShortcutGuide() {
             }}
           >
             <Text size="sm" fw={600} style={{ color: 'var(--orange)' }}>
-              &quot;Hey Siri, Log iSignal&quot;
+              &quot;Hey Siri, Log to iSignal&quot;
             </Text>
           </Box>
           <Text size="xs" mt={6} style={{ color: 'var(--text-muted)' }}>
-            Siri will listen, log your entry, and speak the confirmation (e.g. &quot;Logged 7.5 hours of sleep&quot;).
+            Siri will ask what to log, listen, post to iSignal, and announce &quot;Done&quot; or &quot;Something went
+            wrong.&quot;
           </Text>
         </Box>
 

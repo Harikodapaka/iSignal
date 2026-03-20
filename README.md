@@ -49,6 +49,11 @@ AUTH_GOOGLE_SECRET=...
 # Groq — console.groq.com (free tier)
 GROQ_API_KEY=...
 
+# Push notifications — run: npx web-push generate-vapid-keys
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=...
+VAPID_PRIVATE_KEY=...
+CRON_SECRET=...
+
 NEXTAUTH_URL=http://localhost:3000
 ```
 
@@ -180,25 +185,33 @@ app/
 │   ├── events/         — POST log, GET by date or id (AI poll)
 │   ├── metrics/        — GET pinned, PATCH (pin, edit, unit backfill)
 │   ├── analytics/      — GET trends + stats per metric per range
-│   └── aliases/        — GET pending aliases for user confirmation
+│   ├── aliases/        — GET pending aliases for user confirmation
+│   ├── push/subscribe/ — POST/DELETE/GET push subscriptions
+│   ├── push/test/      — POST send test notification
+│   └── cron/notifications/ — hourly notification dispatcher
 lib/
-├── parser.ts           — tokenizer, fuzzy matcher, unit extractor
-├── parser-constants.ts — UNIT_MAP, NOISE_WORDS, VERB_TOKENS
-├── metrics.ts          — KNOWN_METRICS, KnownMetric, AggregationType
-├── ai.ts               — Groq calls: extraction, alias resolution, correlations
-├── cache.ts            — MongoDB TTL cache helpers
-├── mongodb.ts          — Mongoose connection (dev singleton)
-└── timezone.ts         — getLastNDays, toLocalDateString
+├── parser.ts              — tokenizer, fuzzy matcher, unit extractor
+├── parser-constants.ts    — UNIT_MAP, NOISE_WORDS, VERB_TOKENS
+├── metrics.ts             — KNOWN_METRICS, KnownMetric, AggregationType
+├── ai.ts                  — Groq calls: extraction, alias resolution, correlations
+├── cache.ts               — MongoDB TTL cache helpers
+├── mongodb.ts             — Mongoose connection (dev singleton)
+├── timezone.ts            — getLastNDays, toLocalDateString
+├── push-sender.ts         — VAPID init + web-push send helper
+├── notification-messages.ts — morning/midday/evening message generators
+└── notification-context.ts  — builds per-user context for personalized messages
 models/
 ├── Event.ts            — rawText, metricKey, value, valueType, unit, date
 ├── Metric.ts           — displayName, valueType, unit, aggregation, pinned, frequencyScore
 ├── Alias.ts            — rawKey, canonicalKey, confidence, createdBy
 ├── PendingAlias.ts     — aliases awaiting user confirmation
+├── PushSubscription.ts — endpoint, keys, timezone, lastNotifiedAt
 └── Cache.ts            — key, value, expiresAt (TTL index)
 hooks/
-├── useAnalytics.ts     — fetches analytics per range (7d/30d/3mo)
-├── useEvents.ts        — fetches today's events
-└── useMetrics.ts       — fetches pinned metrics, exposes updateMetric()
+├── useAnalytics.ts         — fetches analytics per range (7d/30d/3mo)
+├── useEvents.ts            — fetches today's events
+├── useMetrics.ts           — fetches pinned metrics, exposes updateMetric()
+└── usePushNotifications.ts — subscribe/unsubscribe, permission state
 components/
 ├── log/LogInput.tsx              — log input with autocomplete + AI toast polling
 ├── metrics/MetricCard.tsx        — metric card with sparkline
@@ -255,12 +268,55 @@ Features:
 - Orange theme color (`#ff6b00`) in status bar
 - Service worker registered for future offline support + background sync
 
-**Planned SW features:**
+---
 
-- Cache-first for static assets (`/_next/static/*`)
-- Network-first with offline fallback for navigation
-- Background sync — queue failed logs when offline, replay on reconnect
-- Push notifications — daily reminders, streak alerts
+## Push Notifications
+
+iSignal sends personalized push notifications to remind you to log throughout the day. Notifications are delivered via the [Web Push API](https://developer.mozilla.org/en-US/docs/Web/API/Push_API) — no native app required.
+
+### How it works
+
+1. **Subscribe** — Toggle notifications on in Settings. The browser requests permission, creates a push subscription, and sends it to the server along with your timezone.
+2. **Schedule** — A GitHub Actions cron job runs every hour and calls `/api/cron/notifications`. The server checks each subscriber's local time and sends notifications at three windows:
+   - **6 AM** — Morning: sleep reminder, streak updates
+   - **12 PM** — Midday: nudges for unlogged pinned metrics (water, mood, workout, etc.)
+   - **7 PM** — Evening: wrap-up showing how many metrics you logged vs. missed
+3. **Deliver** — The service worker (`public/sw.js`) receives the push event and displays a system notification. Clicking it opens iSignal to `/today`.
+
+Duplicate notifications are prevented by tracking `lastNotifiedAt` per notification window per user.
+
+### Personalization
+
+Messages are context-aware — they reference your pinned metrics, what you've already logged today, and streaks (e.g. consecutive days of sleep tracking). If all pinned metrics are logged by midday, you get a congratulatory message instead of a nudge.
+
+### Setup
+
+Generate VAPID keys (one-time):
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Add to `.env.local`:
+
+```bash
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=<base64-public-key>
+VAPID_PRIVATE_KEY=<base64-private-key>
+
+# Authenticates the cron endpoint
+CRON_SECRET=<secure-random-token>
+```
+
+For the GitHub Actions scheduler, add `CRON_SECRET` and `APP_URL` (your production URL) as repository secrets.
+
+### Testing
+
+Use the "Send test notification" button in Settings, or call the API directly:
+
+```bash
+curl -X POST https://yourapp.com/api/push/test \
+  -H "Cookie: <session-cookie>"
+```
 
 ---
 
