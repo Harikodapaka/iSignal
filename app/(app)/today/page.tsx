@@ -179,7 +179,26 @@ export default function TodayPage() {
 
       {/* Log bar */}
       <Box className="fade-in fade-in-1">
-        <LogInput onLogged={handleLogged} />
+        <Text
+          size="xs"
+          fw={700}
+          tt="uppercase"
+          mb={8}
+          style={{
+            letterSpacing: '0.09em',
+            color: 'var(--orange)',
+          }}
+        >
+          ⚡ Log an activity
+        </Text>
+        <Box className={events.length === 0 ? 'log-input-highlight' : undefined} style={{ borderRadius: 24 }}>
+          <LogInput onLogged={handleLogged} />
+        </Box>
+        {events.length === 0 && (
+          <Text size="xs" mt={6} style={{ color: 'var(--text-muted)' }}>
+            Type what you did — e.g. &quot;sleep 7.5&quot;, &quot;mood 8&quot;, &quot;ran 3 miles&quot;
+          </Text>
+        )}
       </Box>
 
       {/* Rings + Quick stats */}

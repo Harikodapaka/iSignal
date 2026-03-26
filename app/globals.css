@@ -151,6 +151,21 @@ body {
   animation-delay: 0.25s;
 }
 
+@keyframes subtlePulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 0, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 107, 0, 0.12);
+  }
+}
+
+.log-input-highlight {
+  animation: subtlePulse 2.5s ease-in-out 3;
+}
+
 @keyframes slideInLeft {
   from {
     opacity: 0;
