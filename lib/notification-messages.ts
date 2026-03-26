@@ -92,6 +92,14 @@ export function getMiddayMessage(ctx: NotificationContext): PushPayload {
   // Find a pinned metric that hasn't been logged today
   const missing = ctx.pinnedMetrics.filter((m) => !ctx.loggedToday.has(m.metricKey));
 
+  if (ctx.pinnedMetrics.length === 0) {
+    return {
+      title: 'No metrics pinned yet 📌',
+      body: 'Pin a few metrics to start tracking your day!',
+      url: '/today',
+    };
+  }
+
   if (missing.length === 0) {
     return {
       title: "You're on fire! 🔥",
@@ -125,6 +133,21 @@ export function getEveningMessage(ctx: NotificationContext): PushPayload {
   const logged = ctx.loggedToday.size;
   const missing = ctx.pinnedMetrics.filter((m) => !ctx.loggedToday.has(m.metricKey));
   const missingCount = missing.length;
+
+  if (total === 0) {
+    return pick([
+      {
+        title: 'No metrics pinned yet 📌',
+        body: 'Pin a few metrics to start tracking your day!',
+        url: '/today',
+      },
+      {
+        title: 'Get started! 🚀',
+        body: 'Add some metrics to track and own your daily routine.',
+        url: '/today',
+      },
+    ]);
+  }
 
   if (missingCount === 0) {
     return pick([
