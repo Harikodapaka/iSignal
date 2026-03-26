@@ -1,6 +1,17 @@
 import type { LogInputParsed } from '@/types';
 import { KNOWN_METRICS } from '@/lib/metrics';
-import { UNIT_MAP, NOISE_WORDS, VERB_TOKENS } from '@/lib/parser-constants';
+import {
+  UNIT_MAP,
+  NOISE_WORDS,
+  VERB_TOKENS,
+  UNIT_CONVERSIONS,
+  SERVING_CONVERSIONS,
+  METRIC_ALIAS_UNITS,
+  SENTIMENT_SCORES,
+  CONTEXT_OVERRIDES,
+  HALF_PATTERN,
+  HALF_PLACEHOLDER,
+} from '@/lib/parser-constants';
 
 export { KNOWN_METRICS } from '@/lib/metrics';
 export { UNIT_MAP, NOISE_WORDS, VERB_TOKENS } from '@/lib/parser-constants';
@@ -130,31 +141,6 @@ export function parseAtSyntax(raw: string): LogInputParsed | null {
 }
 
 // ── Unit conversion ──────────────────────────────────────────────────────────
-// Converts between compatible units when user logs in a different unit than the metric expects.
-// e.g. metric expects "h" but user logs "60min" → converts to 1h
-const UNIT_CONVERSIONS: Record<string, Record<string, number>> = {
-  // time
-  min: { h: 1 / 60, sec: 60 },
-  h: { min: 60, sec: 3600 },
-  sec: { min: 1 / 60, h: 1 / 3600 },
-  // weight
-  kg: { lb: 2.20462, g: 1000, oz: 35.274 },
-  lb: { kg: 0.453592, g: 453.592, oz: 16 },
-  g: { kg: 0.001, lb: 0.00220462, oz: 0.035274 },
-  oz: { g: 28.3495, kg: 0.0283495, lb: 0.0625 },
-  // volume
-  L: { ml: 1000, cup: 4.22675, glass: 4 },
-  ml: { L: 0.001, cup: 0.00422675, glass: 0.004 },
-  cup: { L: 0.236588, ml: 236.588, glass: 1 },
-  glass: { L: 0.25, ml: 250, cup: 1 },
-  // distance
-  km: { mi: 0.621371, m: 1000 },
-  mi: { km: 1.60934, m: 1609.34 },
-  m: { km: 0.001, mi: 0.000621371 },
-  // energy
-  kcal: {},
-};
-
 function convertUnit(value: number, fromUnit: string, toUnit: string): { value: number; unit: string } | null {
   const conversions = UNIT_CONVERSIONS[fromUnit];
   if (!conversions || conversions[toUnit] === undefined) return null;
@@ -164,10 +150,6 @@ function convertUnit(value: number, fromUnit: string, toUnit: string): { value: 
 
 // ── Multi-metric splitter ─────────────────────────────────────────────────────
 // Splits "ran 5k and drank 2L water" into ["ran 5k", "drank 2L water"]
-// Fix #4: Preserves "and a half" — don't split when "and" is part of a fractional value.
-const HALF_PATTERN = /\band\s+a\s+half\b/gi;
-const HALF_PLACEHOLDER = '__HALF__';
-
 function splitMultiMetric(raw: string): string[] {
   // Protect "and a half" from being split
   const protected_ = raw.replace(HALF_PATTERN, HALF_PLACEHOLDER);
@@ -181,19 +163,6 @@ function splitMultiMetric(raw: string): string[] {
 }
 
 // ── Contextual alias overrides ───────────────────────────────────────────────
-// When certain words appear together, they change meaning.
-// "energy drink" → caffeine, not energy. "back hurts" → not workout.
-const CONTEXT_OVERRIDES: { pattern: RegExp; metricKey: string; blockKeys?: string[] }[] = [
-  // Fix #13: "energy drink" should be caffeine, not energy
-  { pattern: /\benergy\s+drink\b/i, metricKey: 'caffeine', blockKeys: ['energy'] },
-  // Fix #12: "back hurts/pain/ache" should NOT match workout
-  {
-    pattern: /\bback\s+(?:hurts?|pain|ache|sore|stiff|injury|problem)/i,
-    metricKey: '__block__',
-    blockKeys: ['workout'],
-  },
-];
-
 function checkContextOverrides(raw: string): { forcedKey?: string; blockedKeys: Set<string> } {
   const blockedKeys = new Set<string>();
   let forcedKey: string | undefined;
@@ -211,25 +180,7 @@ function checkContextOverrides(raw: string): { forcedKey?: string; blockedKeys: 
   return { forcedKey, blockedKeys };
 }
 
-// ── Beverage/serving size → unit conversion ──────────────────────────────────
-// Fix #8 & #9: Convert serving-based inputs to metric's expected unit.
-// "2 cups of coffee" → caffeine 190mg (1 cup ≈ 95mg)
-// "2 scoops protein" → protein 50g (1 scoop ≈ 25g)
-const SERVING_CONVERSIONS: Record<string, Record<string, { factor: number; unit: string }>> = {
-  caffeine: {
-    cup: { factor: 95, unit: 'mg' }, // 1 cup coffee ≈ 95mg caffeine
-    glass: { factor: 95, unit: 'mg' },
-    shot: { factor: 63, unit: 'mg' }, // 1 espresso shot ≈ 63mg
-    can: { factor: 80, unit: 'mg' }, // 1 energy drink can ≈ 80mg
-  },
-  protein: {
-    scoop: { factor: 25, unit: 'g' }, // 1 scoop ≈ 25g protein
-    scoops: { factor: 25, unit: 'g' },
-    serving: { factor: 25, unit: 'g' },
-    servings: { factor: 25, unit: 'g' },
-  },
-};
-
+// ── Serving conversion ───────────────────────────────────────────────────────
 function convertServing(metricKey: string, value: number, unit: string): { value: number; unit: string } | null {
   const conversions = SERVING_CONVERSIONS[metricKey];
   if (!conversions) return null;
@@ -238,17 +189,14 @@ function convertServing(metricKey: string, value: number, unit: string): { value
   return { value: Math.round(value * conversion.factor * 100) / 100, unit: conversion.unit };
 }
 
-// ── Tokens that are BOTH a unit and a metric alias ───────────────────────────
-// Fix #1: "calories 2000" — "calories" is in UNIT_MAP but is also a metric alias.
-// These tokens should be treated as metric keys, NOT units, when they appear with a number.
-const METRIC_ALIAS_UNITS = new Set([
-  'calories',
-  'calorie',
-  'cal',
-  'cals',
-  'kcal', // alias for calories metric AND unit
-  'steps', // alias for steps metric AND unit
-]);
+// ── Sentiment inference ──────────────────────────────────────────────────────
+function inferSentimentValue(text: string): number | null {
+  const words = text.toLowerCase().split(/\s+/);
+  for (const word of words) {
+    if (SENTIMENT_SCORES[word] !== undefined) return SENTIMENT_SCORES[word];
+  }
+  return null;
+}
 
 // ── Single segment parser (internal) ─────────────────────────────────────────
 function parseSingleSegment(trimmed: string, userMetricKeys: string[] = []): LogInputParsed | null {
@@ -260,7 +208,11 @@ function parseSingleSegment(trimmed: string, userMetricKeys: string[] = []): Log
   // Check context overrides before tokenizing
   const { forcedKey, blockedKeys } = checkContextOverrides(halfNormalized);
 
-  const tokens = halfNormalized.toLowerCase().split(/\s+/);
+  const tokens = halfNormalized
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ''))
+    .filter(Boolean);
   const keyTokens: string[] = [];
   let value: number | null = null;
   let unit: string | null = null;
@@ -330,6 +282,17 @@ function parseSingleSegment(trimmed: string, userMetricKeys: string[] = []): Log
   }
 
   if (resolvedValue !== null) return { metricKey, value: resolvedValue, valueType: 'number', unit: resolvedUnit };
+
+  // Fix: If a known numeric metric (e.g. mood /10) matched but no number was found,
+  // infer a value from sentiment words instead of falling back to boolean.
+  if (known?.type === 'number' && known?.unit === '/10') {
+    const text = keyTokens.join(' ');
+    const sentimentValue = inferSentimentValue(text);
+    if (sentimentValue !== null) {
+      return { metricKey, value: sentimentValue, valueType: 'number', unit: resolvedUnit };
+    }
+  }
+
   return { metricKey, value: true, valueType: 'boolean' };
 }
 

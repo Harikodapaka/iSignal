@@ -98,10 +98,59 @@ export async function logEvent(
   if (multiParsed.length > 1) {
     const results: LogResult[] = [];
     for (const p of multiParsed) {
-      // Re-run logEvent for each parsed segment using a synthetic single-metric input
-      const syntheticInput = p.unit ? `@${p.metricKey}:${p.unit} ${p.value}` : `@${p.metricKey} ${p.value}`;
-      const result = await logEvent(userId, syntheticInput, tz, backgroundFn);
-      results.push(result);
+      // Create event directly from parsed data, preserving the original raw text
+      const resolvedUnit = p.unit ?? null;
+      const isNewMetric = !(await MetricModel.exists({ userId, metricKey: p.metricKey }));
+
+      const event = await EventModel.create({
+        userId,
+        timestamp: new Date().toISOString(),
+        date: toLocalDateString(tz),
+        rawText,
+        metricKey: p.metricKey,
+        value: p.value,
+        valueType: p.valueType,
+        unit: resolvedUnit,
+      });
+
+      await MetricModel.findOneAndUpdate(
+        { userId, metricKey: p.metricKey },
+        {
+          $setOnInsert: {
+            displayName: getMetricDisplayName(p.metricKey),
+            valueType: p.valueType,
+            unit: resolvedUnit,
+            aggregation: inferAggregation(p.valueType, resolvedUnit),
+            pinned: false,
+          },
+          $inc: { frequencyScore: 1 },
+        },
+        { upsert: true }
+      );
+
+      await MetricModel.findOneAndUpdate(
+        { userId, metricKey: p.metricKey, frequencyScore: { $gte: 3 }, pinned: false, userUnpinned: { $ne: true } },
+        { $set: { pinned: true } }
+      );
+
+      await cache.del(`analytics:${userId}:${p.metricKey}`);
+      await cache.del(`metrics:pinned:${userId}`);
+      if (isNewMetric) await cache.invalidateMetricKeys(userId);
+
+      // Background AI: extract sentiment, tags, and note
+      const eventId = String(event._id);
+      const bgWork = aiExtractContext(rawText, p.metricKey, userId)
+        .then(async (ctx) => {
+          if (ctx.sentiment !== 'neutral' || ctx.tags.length > 0 || ctx.note) {
+            await EventModel.findByIdAndUpdate(eventId, {
+              $set: { sentiment: ctx.sentiment, tags: ctx.tags, note: ctx.note },
+            }).catch(() => {});
+          }
+        })
+        .catch(() => {});
+      if (backgroundFn) backgroundFn(bgWork);
+
+      results.push({ ok: true, event: event.toObject() as unknown as IEvent });
     }
     // Return the first successful result with all multi results attached
     const firstOk = results.find((r) => r.ok);
