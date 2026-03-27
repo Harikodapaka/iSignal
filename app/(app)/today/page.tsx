@@ -194,11 +194,9 @@ export default function TodayPage() {
         <Box className={events.length === 0 ? 'log-input-highlight' : undefined} style={{ borderRadius: 24 }}>
           <LogInput onLogged={handleLogged} />
         </Box>
-        {events.length === 0 && (
-          <Text size="xs" mt={6} style={{ color: 'var(--text-muted)' }}>
-            Type what you did — e.g. &quot;sleep 7.5&quot;, &quot;mood 8&quot;, &quot;ran 3 miles&quot;
-          </Text>
-        )}
+        <Text size="xs" mt={6} style={{ color: 'var(--text-muted)' }}>
+          Log what you did — e.g. &quot;I slept 7.5H&quot;, &quot;mood 8&quot;, &quot;I ran 3 miles&quot;
+        </Text>
       </Box>
 
       {/* Rings + Quick stats */}

@@ -8,6 +8,7 @@ export interface IPushSubscription extends Document {
     auth: string;
   };
   enabled: boolean;
+  smartReminders: boolean; // Auto-send reminders based on logging patterns
   timezone: string;
   lastNotifiedAt: Record<string, Date>; // { morning: Date, midday: Date, evening: Date }
   createdAt: Date;
@@ -23,6 +24,7 @@ const PushSubscriptionSchema = new Schema<IPushSubscription>(
       auth: { type: String, required: true },
     },
     enabled: { type: Boolean, default: true },
+    smartReminders: { type: Boolean, default: true },
     timezone: { type: String, default: 'UTC' },
     lastNotifiedAt: { type: Schema.Types.Mixed, default: {} },
   },
