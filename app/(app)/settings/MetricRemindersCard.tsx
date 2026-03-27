@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Box, Group, Loader, MultiSelect, Stack, Switch, Text } from '@mantine/core';
-import { IconClock } from '@tabler/icons-react';
+import { Badge, Box, Button, Group, Loader, MultiSelect, Stack, Switch, Text, Tooltip } from '@mantine/core';
+import { IconBulb, IconClock } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { getMetricEmoji } from '@/lib/parser';
@@ -16,13 +16,34 @@ interface MetricReminder {
   };
 }
 
+interface MetricSuggestion {
+  metricKey: string;
+  suggestedTimes: number[];
+  confidence: 'high' | 'medium' | 'low';
+  sampleSize: number;
+  peakHourCount: number;
+}
+
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => ({
   value: String(i),
   label: i === 0 ? '12 AM' : i < 12 ? `${i} AM` : i === 12 ? '12 PM' : `${i - 12} PM`,
 }));
 
+function formatHour(h: number): string {
+  return h === 0 ? '12 AM' : h < 12 ? `${h} AM` : h === 12 ? '12 PM' : `${h - 12} PM`;
+}
+
+function formatSuggestionHint(times: number[]): string {
+  const formatted = times.map(formatHour);
+  if (formatted.length === 1) return `You usually log this around ${formatted[0]}`;
+  if (formatted.length === 2) return `You usually log this around ${formatted[0]} and ${formatted[1]}`;
+  const last = formatted.pop()!;
+  return `You usually log this around ${formatted.join(', ')}, and ${last}`;
+}
+
 export function MetricRemindersCard() {
   const [metrics, setMetrics] = useState<MetricReminder[]>([]);
+  const [suggestions, setSuggestions] = useState<Map<string, MetricSuggestion>>(new Map());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
 
@@ -40,9 +61,27 @@ export function MetricRemindersCard() {
     }
   }, []);
 
+  const fetchSuggestions = useCallback(async () => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const res = await fetch(`/api/metrics/suggestions?tz=${encodeURIComponent(tz)}`);
+      const data = await res.json();
+      if (data.success && data.data) {
+        const map = new Map<string, MetricSuggestion>();
+        for (const s of data.data as MetricSuggestion[]) {
+          map.set(s.metricKey, s);
+        }
+        setSuggestions(map);
+      }
+    } catch {
+      /* ignore — suggestions are best-effort */
+    }
+  }, []);
+
   useEffect(() => {
     fetchMetrics();
-  }, [fetchMetrics]);
+    fetchSuggestions();
+  }, [fetchMetrics, fetchSuggestions]);
 
   const toggleReminder = async (metricKey: string, enabled: boolean, times: number[]) => {
     setSaving(metricKey);
@@ -72,6 +111,14 @@ export function MetricRemindersCard() {
     const metric = metrics.find((m) => m.metricKey === metricKey);
     if (!metric) return;
     await toggleReminder(metricKey, metric.reminder?.enabled ?? true, times);
+  };
+
+  const applySuggestion = async (metricKey: string, suggestedTimes: number[]) => {
+    await toggleReminder(metricKey, true, suggestedTimes);
+    notifications.show({
+      message: 'Smart reminders applied!',
+      color: 'orange',
+    });
   };
 
   if (loading) {
@@ -110,7 +157,7 @@ export function MetricRemindersCard() {
 
         <Box
           style={{
-            maxHeight: 320,
+            maxHeight: 400,
             overflowY: 'auto',
             paddingRight: 4,
           }}
@@ -121,6 +168,9 @@ export function MetricRemindersCard() {
               const times = m.reminder?.times ?? [];
               const emoji = getMetricEmoji(m.metricKey);
               const isSaving = saving === m.metricKey;
+              const suggestion = suggestions.get(m.metricKey);
+              // Show suggestion if: has one, reminder not yet enabled, or enabled but no times set
+              const showSuggestion = suggestion && (!enabled || times.length === 0);
 
               return (
                 <Box
@@ -132,7 +182,7 @@ export function MetricRemindersCard() {
                     border: '1px solid var(--sidebar-border)',
                   }}
                 >
-                  <Group justify="space-between" align="center" mb={enabled ? 'xs' : 0}>
+                  <Group justify="space-between" align="center" mb={enabled || showSuggestion ? 'xs' : 0}>
                     <Group gap="xs">
                       <Text size="sm">{emoji}</Text>
                       <Text size="sm" fw={500} style={{ color: 'var(--text-primary)' }}>
@@ -148,6 +198,58 @@ export function MetricRemindersCard() {
                       color="orange"
                     />
                   </Group>
+
+                  {/* Smart suggestion banner */}
+                  {showSuggestion && (
+                    <Box
+                      mb="xs"
+                      p="xs"
+                      style={{
+                        background: 'var(--orange-tint)',
+                        borderRadius: 8,
+                        border: '1px solid color-mix(in srgb, var(--orange) 20%, transparent)',
+                      }}
+                    >
+                      <Group justify="space-between" align="center" wrap="nowrap" gap="xs">
+                        <Group gap={6} align="center" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+                          <IconBulb size={14} color="var(--orange)" style={{ flexShrink: 0 }} />
+                          <Text size="xs" style={{ color: 'var(--text-secondary)' }} lineClamp={2}>
+                            {formatSuggestionHint(suggestion.suggestedTimes)}
+                          </Text>
+                          <Tooltip
+                            label={`Based on ${suggestion.sampleSize} logs from the last 30 days`}
+                            position="top"
+                            withArrow
+                          >
+                            <Badge
+                              size="xs"
+                              variant="light"
+                              color={
+                                suggestion.confidence === 'high'
+                                  ? 'green'
+                                  : suggestion.confidence === 'medium'
+                                    ? 'orange'
+                                    : 'gray'
+                              }
+                              style={{ flexShrink: 0 }}
+                            >
+                              {suggestion.confidence}
+                            </Badge>
+                          </Tooltip>
+                        </Group>
+                        <Button
+                          size="compact-xs"
+                          variant="light"
+                          color="orange"
+                          onClick={() => applySuggestion(m.metricKey, suggestion.suggestedTimes)}
+                          disabled={isSaving}
+                          style={{ flexShrink: 0 }}
+                        >
+                          Apply
+                        </Button>
+                      </Group>
+                    </Box>
+                  )}
 
                   {enabled && (
                     <MultiSelect
@@ -174,6 +276,7 @@ export function MetricRemindersCard() {
 
         <Text size="xs" style={{ color: 'var(--text-faint)' }}>
           Reminders are checked hourly. You won&apos;t receive a reminder if the metric is already logged for the day.
+          {suggestions.size > 0 && ' 💡 Smart suggestions are based on your logging patterns.'}
         </Text>
       </Stack>
     </GlassCard>

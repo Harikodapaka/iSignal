@@ -18,6 +18,7 @@ export function usePushNotifications() {
   const [isSupported, setIsSupported] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>('default');
   const [loading, setLoading] = useState(true);
+  const [smartReminders, setSmartReminders] = useState(true);
 
   // Check support and current status on mount
   useEffect(() => {
@@ -36,11 +37,20 @@ export function usePushNotifications() {
 
     setPermission(Notification.permission);
 
-    // Check if already subscribed
+    // Check if already subscribed + fetch preferences
     navigator.serviceWorker.ready.then(async (reg) => {
       try {
         const sub = await reg.pushManager.getSubscription();
         setIsSubscribed(!!sub);
+
+        // Fetch server-side preferences
+        if (sub) {
+          const res = await fetch('/api/push/subscribe');
+          const data = await res.json();
+          if (data.success) {
+            setSmartReminders(data.smartReminders !== false);
+          }
+        }
       } catch {
         // ignore
       } finally {
@@ -142,12 +152,32 @@ export function usePushNotifications() {
     }
   }, [isSupported]);
 
+  const toggleSmartReminders = useCallback(async (enabled: boolean) => {
+    try {
+      const res = await fetch('/api/push/subscribe', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ smartReminders: enabled }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSmartReminders(enabled);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, []);
+
   return {
     isSubscribed,
     isSupported,
     permission,
     loading,
+    smartReminders,
     subscribe,
     unsubscribe,
+    toggleSmartReminders,
   };
 }

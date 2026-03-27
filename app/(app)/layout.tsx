@@ -17,6 +17,7 @@ import {
 } from '@tabler/icons-react';
 import { useSession, signOut } from 'next-auth/react';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+import { FirstVisitPrompts } from '@/components/FirstVisitPrompts';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import Image from 'next/image';
 
@@ -405,6 +406,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       >
         <ThemeSwitcher />
       </Box>
+      <FirstVisitPrompts />
       {/* ── MOBILE BOTTOM NAV ── */}
       <nav className="mobile-bottom-nav mobile-only">
         <div className="mobile-nav-inner">

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Box, Button, Group, Stack, Switch, Text } from '@mantine/core';
-import { IconBell } from '@tabler/icons-react';
+import { IconBell, IconSparkles } from '@tabler/icons-react';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 
@@ -92,6 +92,36 @@ export function PushNotificationsCard() {
                     </Text>
                   </Stack>
                 </Box>
+                {/* Smart Reminders toggle */}
+                <Box
+                  p="sm"
+                  style={{
+                    background: 'var(--card-bg)',
+                    borderRadius: 8,
+                    border: '1px solid var(--sidebar-border)',
+                  }}
+                >
+                  <Group justify="space-between" align="center">
+                    <Group gap="xs" align="center">
+                      <IconSparkles size={16} style={{ color: 'var(--orange)' }} />
+                      <Box>
+                        <Text size="xs" fw={600} style={{ color: 'var(--text-primary)' }}>
+                          Smart Reminders
+                        </Text>
+                        <Text size="xs" style={{ color: 'var(--text-muted)' }}>
+                          Auto-remind based on your logging patterns
+                        </Text>
+                      </Box>
+                    </Group>
+                    <Switch
+                      checked={push.smartReminders}
+                      onChange={() => push.toggleSmartReminders(!push.smartReminders)}
+                      size="sm"
+                      color="orange"
+                    />
+                  </Group>
+                </Box>
+
                 <Group gap="xs" align="center">
                   <Button size="xs" variant="light" color="orange" onClick={sendTestNotification} loading={testSending}>
                     Send Test Notification

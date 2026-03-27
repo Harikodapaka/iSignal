@@ -83,14 +83,43 @@ export async function GET() {
     }
 
     await connectDB();
-    const count = await PushSubscription.countDocuments({
+    const sub = await PushSubscription.findOne({
       userId: session.user.id,
       enabled: true,
-    });
+    })
+      .select('smartReminders')
+      .lean();
 
-    return NextResponse.json({ success: true, subscribed: count > 0 });
+    return NextResponse.json({
+      success: true,
+      subscribed: !!sub,
+      smartReminders: (sub as { smartReminders?: boolean } | null)?.smartReminders !== false,
+    });
   } catch (error) {
     console.error('[push/subscribe] GET error:', error);
+    return NextResponse.json({ success: false, error: 'Server error' }, { status: 500 });
+  }
+}
+
+// PATCH — update subscription preferences (e.g. smartReminders toggle)
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { smartReminders } = await req.json();
+    if (typeof smartReminders !== 'boolean') {
+      return NextResponse.json({ success: false, error: 'Invalid smartReminders value' }, { status: 400 });
+    }
+
+    await connectDB();
+    await PushSubscription.updateMany({ userId: session.user.id }, { $set: { smartReminders } });
+
+    return NextResponse.json({ success: true, smartReminders });
+  } catch (error) {
+    console.error('[push/subscribe] PATCH error:', error);
     return NextResponse.json({ success: false, error: 'Server error' }, { status: 500 });
   }
 }
