@@ -30,19 +30,30 @@ const MORNING_SLEEP_LOGGED = [
 
 export function getMorningMessage(ctx: NotificationContext): PushPayload {
   const tracksSleep = ctx.pinnedMetrics.some((m) => m.metricKey === 'sleep');
+  const sleepLoggedToday = ctx.loggedToday.has('sleep');
 
-  if (tracksSleep && !ctx.sleepLoggedYesterday) {
-    const msg = pick(MORNING_SLEEP_REMINDER);
-    return { title: msg.title, body: msg.body, url: '/today' };
-  }
-
-  if (tracksSleep && ctx.sleepStreak > 0) {
+  // Already logged sleep today (e.g. logged at midnight) — celebrate streak
+  if (tracksSleep && sleepLoggedToday && ctx.sleepStreak > 0) {
     const msg = pick(MORNING_SLEEP_LOGGED);
     return {
       title: msg.title,
       body: msg.body(ctx.sleepStreak),
       url: '/today',
     };
+  }
+
+  // Tracks sleep but hasn't logged today — remind them
+  if (tracksSleep && !sleepLoggedToday) {
+    // Include streak context in the reminder if they have one going
+    if (ctx.sleepLoggedYesterday && ctx.sleepStreak > 0) {
+      return {
+        title: `Keep your ${ctx.sleepStreak}-day streak! 🔥`,
+        body: "Quick — log last night's sleep before you forget!",
+        url: '/today',
+      };
+    }
+    const msg = pick(MORNING_SLEEP_REMINDER);
+    return { title: msg.title, body: msg.body, url: '/today' };
   }
 
   // Generic morning
