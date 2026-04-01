@@ -174,7 +174,7 @@ export const KNOWN_METRICS: KnownMetric[] = [
     key: 'steps',
     displayName: 'Steps',
     type: 'number',
-    unit: 'k',
+    unit: 'steps',
     color: '#ff375f',
     emoji: '👟',
     aggregation: 'sum',

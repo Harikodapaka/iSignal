@@ -5,7 +5,7 @@ describe('parseLogInputMulti — splitting', () => {
   it('splits on "and"', () => {
     const results = parseLogInputMulti('ran 5k and drank 2L water');
     expect(results).toHaveLength(2);
-    expect(results[0]).toMatchObject({ metricKey: 'run', value: 5, unit: 'k' });
+    expect(results[0]).toMatchObject({ metricKey: 'run', value: 5, unit: 'km' });
     expect(results[1]).toMatchObject({ metricKey: 'water', value: 2, unit: 'L' });
   });
 

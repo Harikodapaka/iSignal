@@ -334,24 +334,51 @@ Respond ONLY with JSON, no markdown:
 }
 
 // ── 5. Correlation Engine ─────────────────────────────────────────────────────
+// Now receives pre-computed Pearson correlations + conditional averages from the route.
+// AI's job is to interpret them in plain language, not do the math.
+
+interface ComputedCorrelation {
+  metricA: string;
+  metricB: string;
+  r: number;
+  avgAWhenBHigh: number;
+  avgAWhenBLow: number;
+  avgBWhenAHigh: number;
+  avgBWhenALow: number;
+  overlapDays: number;
+}
+
 export async function aiCorrelations(
   events: { metricKey: string; value: number; date: string }[],
+  computed: ComputedCorrelation[],
   userId: string
 ): Promise<{ metricA: string; metricB: string; direction: string; strength: string; insight: string }[]> {
   if (events.length < 20) return [];
+  if (computed.length === 0) return [];
 
-  const ck = hashKey('corr', userId + events.length + events[events.length - 1]?.date);
+  const ck = hashKey('corr_v2', userId + JSON.stringify(computed));
   const result = await cachedGeminiCall(
     ck,
     async () => {
       const text = await groq(
-        `Analyze 30 days of health tracking data and find meaningful correlations.
-Data: ${JSON.stringify(events.slice(0, 200))}
+        `You are interpreting pre-computed health metric correlations for a user.
+
+Here are statistically computed correlations (Pearson r) with conditional averages:
+${JSON.stringify(computed, null, 1)}
+
+For each correlation, write one specific insight using the actual numbers.
+
+Rules:
+- Use the conditional averages to make it concrete. Example: "On days you drank >2L water, your mood averaged 7.8 vs 5.2 on low-water days"
+- Mention the actual values, not vague statements like "may improve"
+- |r| >= 0.6 is "strong", 0.4-0.6 is "moderate", 0.2-0.4 is "weak"
+- direction: if r > 0 then "positive", if r < 0 then "negative"
+- Correlation ≠ causation. Say "is associated with" or "tends to", not "causes" or "improves"
+- Keep insights to 1-2 sentences max
+- Return max 3 most interesting correlations
 
 Respond ONLY with JSON array, no markdown:
-[{ "metricA": "string", "metricB": "string", "direction": "positive|negative", "strength": "weak|moderate|strong", "insight": "one sentence" }]
-
-Return max 3 strongest correlations only.`,
+[{ "metricA": "string", "metricB": "string", "direction": "positive|negative", "strength": "weak|moderate|strong", "insight": "specific insight with numbers" }]`,
         400
       );
       return parseJSON(text, []);
@@ -364,37 +391,62 @@ Return max 3 strongest correlations only.`,
 }
 
 // ── 6. Weekly Summary ─────────────────────────────────────────────────────────
+// Now receives enriched data with prior-period comparison, day-of-week patterns,
+// best/worst days, and streaks.
+
 export async function aiWeeklySummary(
   weeklyData: object,
-  userId: string
+  userId: string,
+  range: string = '7d'
 ): Promise<{
   headline: string;
   highlights: string[];
   oneThingToImprove: string;
   encouragement: string;
 } | null> {
-  const ck = hashKey('summary', userId + new Date().toISOString().slice(0, 10));
+  const ck = hashKey('summary_v2', userId + range + new Date().toISOString().slice(0, 10));
   const result = await cachedGeminiCall(
     ck,
     async () => {
       const text = await groq(
-        `You are a warm personal health coach. Write a brief weekly summary.
-Be specific, encouraging, and actionable. Avoid generic advice.
+        `You are a personal health coach analyzing a user's tracking data.
+
+Data includes per-metric stats with:
+- currentAvg: this period's daily average (on days logged)
+- priorAvg: previous period's daily average (for comparison)
+- delta: percentage change from prior period (e.g. "+14%" or "-8%")
+- daysLogged vs totalDays: consistency (e.g. 22/30 days)
+- streak: current consecutive days logged
+- bestDay/worstDay: best and worst day with date and day name
+- skippedDays: day-of-week they tend to miss
+- mostActiveDay: day they log most often
+
 Data: ${JSON.stringify(weeklyData)}
+
+Rules:
+- NEVER just restate averages — the user can see those on the dashboard
+- Focus on CHANGES: "Water up 0.3L/day from last period (+14%)"
+- Mention specific days: "Tuesday was your best mood day (9/10)"
+- Call out patterns: "You tend to skip workout on Mondays and Fridays"
+- Call out streaks if notable: "12-day workout streak — your longest!"
+- If a metric dropped, note it honestly but kindly
+- The "oneThingToImprove" must be ULTRA specific: not "drink more water" but "You averaged 1.8L on weekdays vs 2.6L on weekends. Try keeping a bottle at your desk"
+- Keep highlights to 3-4 bullet points max
+- Be warm but not sycophantic. Skip "amazing work!" filler
 
 Respond ONLY with JSON, no markdown:
 {
-  "headline": "punchy one-liner summarizing the week",
-  "highlights": ["highlight 1", "highlight 2", "highlight 3"],
-  "oneThingToImprove": "one specific, actionable suggestion",
-  "encouragement": "one warm, personal sentence"
+  "headline": "punchy one-liner with a key number (e.g. 'Sleep up 12%, mood follows')",
+  "highlights": ["specific highlight with numbers", "..."],
+  "oneThingToImprove": "ultra-specific actionable suggestion referencing their actual data",
+  "encouragement": "one warm sentence referencing something they actually did well"
 }`,
-        350
+        450
       );
       return parseJSON(text, null);
     },
     userId,
-    3600 // one summary per day is enough
+    3600
   );
 
   return result ?? null;

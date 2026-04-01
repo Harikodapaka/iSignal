@@ -260,6 +260,13 @@ function parseSingleSegment(trimmed: string, userMetricKeys: string[] = []): Log
     return null;
   }
 
+  // Fix: "10k steps" → 10000 steps. When unit parsed as 'km' (from 'k' shorthand)
+  // but the metric expects 'steps', treat 'k' as ×1000 multiplier, not kilometers.
+  if (value !== null && unit === 'km' && known?.unit === 'steps') {
+    value = value * 1000;
+    unit = null;
+  }
+
   // Fix #3: Smart unit inference — auto-fill from metric's default unit
   const resolvedUnit = unit ?? known?.unit ?? undefined;
 
@@ -331,7 +338,14 @@ export function formatValue(value: boolean | number | string, unit?: string, val
   if (valueType === 'boolean' || typeof value === 'boolean') return value ? '✓ Done' : '✗ Skipped';
   if (typeof value === 'number') {
     if (unit === '/10') return `${value}/10`;
-    if (unit === 'k') return `${value}k steps`;
+    // Format step counts nicely: 5000 → "5,000 steps"
+    if (unit === 'steps') {
+      return `${value.toLocaleString('en-US')} steps`;
+    }
+    // Legacy: old events stored with unit='k' (before fix)
+    if (unit === 'k') {
+      return `${value.toLocaleString('en-US')} steps`;
+    }
     return unit ? `${value} ${unit}` : `${value}`;
   }
   return String(value);

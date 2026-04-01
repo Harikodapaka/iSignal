@@ -78,8 +78,10 @@ describe('formatValue', () => {
     expect(formatValue(8, '/10')).toBe('8/10');
   });
 
-  it('k unit → steps format', () => {
-    expect(formatValue(10, 'k')).toBe('10k steps');
+  it('steps unit → formatted steps', () => {
+    expect(formatValue(5000, 'steps')).toBe('5,000 steps');
+    expect(formatValue(10000, 'steps')).toBe('10,000 steps');
+    expect(formatValue(500, 'steps')).toBe('500 steps');
   });
 
   it('string value', () => {
