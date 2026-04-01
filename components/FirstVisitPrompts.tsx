@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Group, Stack, Text, CloseButton } from '@mantine/core';
 import { IconDownload, IconBell, IconDeviceMobile, IconShare } from '@tabler/icons-react';
 import Link from 'next/link';
@@ -55,8 +55,14 @@ export function FirstVisitPrompts() {
   const [step, setStep] = useState<Step>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
+  const promptFiredRef = useRef(false);
+  const didRunRef = useRef(false);
 
   useEffect(() => {
+    // Only run once across page navigations
+    if (didRunRef.current) return;
+    didRunRef.current = true;
+
     // Already running as installed PWA — skip everything
     if (isStandalone()) return;
 
@@ -76,15 +82,22 @@ export function FirstVisitPrompts() {
     if (!installDismissed) {
       const handler = (e: Event) => {
         e.preventDefault();
+        promptFiredRef.current = true;
         setDeferredPrompt(e as BeforeInstallPromptEvent);
         setStep('install');
       };
       window.addEventListener('beforeinstallprompt', handler);
 
-      // If no prompt fires within 2s, move to notifications if needed
+      // If no prompt fires within 2s, browser doesn't support install prompt.
+      // Skip install step entirely and move to notifications or close.
       const timeout = setTimeout(() => {
-        if (!deferredPrompt && notifNeeded) {
-          setStep('notifications');
+        if (!promptFiredRef.current) {
+          window.removeEventListener('beforeinstallprompt', handler);
+          // Auto-dismiss install for browsers that don't support it
+          dismissTemporarily(LS_INSTALL_DISMISSED);
+          if (notifNeeded) {
+            setStep('notifications');
+          }
         }
       }, 2000);
 

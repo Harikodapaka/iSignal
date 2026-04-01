@@ -18,7 +18,7 @@ export const UNIT_MAP: Record<string, string> = {
   km: 'km', kms: 'km', kilometer: 'km', kilometers: 'km', kilometre: 'km',
   mi: 'mi', mile: 'mi', miles: 'mi',
   m: 'm', meter: 'm', meters: 'm', metre: 'm',
-  k: 'k',
+  k: 'km',
   // energy
   kcal: 'kcal', cal: 'kcal', cals: 'kcal', calorie: 'kcal', calories: 'kcal',
   // other
