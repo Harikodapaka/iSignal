@@ -197,15 +197,17 @@ If unsure, return null. Only match when semantically clear and direct.`,
 // ── 2. Natural Language Extraction ───────────────────────────────────────────
 export async function aiExtractMetrics(
   raw: string,
-  userId: string
+  userId: string,
+  excludeKey?: string
 ): Promise<{ metricKey: string; value: number | null; unit: string | null; confidence: number }[]> {
-  const existingMetrics = await getUserMetricKeys(userId);
+  const allMetrics = await getUserMetricKeys(userId);
+  // Exclude the current metric key so AI doesn't just match it back to itself
+  const existingMetrics = excludeKey ? allMetrics.filter((k) => k !== excludeKey) : allMetrics;
 
-  const ck = hashKey('extract_v4', raw);
+  const ck = hashKey('extract_v4', raw + (excludeKey ?? ''));
   const result = await cachedGeminiCall(
     ck,
     async () => {
-      console.log(`[AI] aiExtractMetrics: "${raw}"`);
       const text = await groq(
         `You are extracting a health/lifestyle metric from a user's log entry.
 

@@ -6,6 +6,7 @@ export interface IPendingAliasDocument extends Document {
   userId: string;
   confidence: number;
   status: 'pending' | 'confirmed' | 'rejected';
+  eventId?: string; // The originating event to repoint on confirm
 }
 
 const PendingAliasSchema = new Schema<IPendingAliasDocument>(
@@ -19,6 +20,7 @@ const PendingAliasSchema = new Schema<IPendingAliasDocument>(
       enum: ['pending', 'confirmed', 'rejected'],
       default: 'pending',
     },
+    eventId: { type: String, default: null },
   },
   { timestamps: true }
 );

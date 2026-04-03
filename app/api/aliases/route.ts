@@ -68,22 +68,40 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'confirm') {
-      // Write confirmed alias
-      await AliasModel.findOneAndUpdate(
-        { rawKey: pending.rawKey, userId },
-        {
-          canonicalKey: pending.suggestedKey,
-          createdBy: 'user',
-          confidence: 1.0,
-        },
-        { upsert: true }
-      );
+      // Write confirmed alias (skip for __unknown__ or sentence keys)
+      const isRealMetricKey = pending.rawKey !== '__unknown__' && !pending.rawKey.includes(' ');
+      if (isRealMetricKey) {
+        await AliasModel.findOneAndUpdate(
+          { rawKey: pending.rawKey, userId },
+          {
+            canonicalKey: pending.suggestedKey,
+            createdBy: 'user',
+            confidence: 1.0,
+          },
+          { upsert: true }
+        );
+      }
 
-      // Retroactively repoint all past events
-      const { modifiedCount } = await EventModel.updateMany(
-        { userId, metricKey: pending.rawKey },
-        { $set: { metricKey: pending.suggestedKey } }
-      );
+      // Retroactively repoint all past events with this metricKey
+      let modifiedCount = 0;
+      if (isRealMetricKey) {
+        const result = await EventModel.updateMany(
+          { userId, metricKey: pending.rawKey },
+          { $set: { metricKey: pending.suggestedKey } }
+        );
+        modifiedCount = result.modifiedCount;
+      }
+
+      // Also repoint the specific event if we have an eventId (for sentence-based extractions)
+      if (pending.eventId) {
+        const eventResult = await EventModel.updateOne(
+          { _id: pending.eventId, userId },
+          { $set: { metricKey: pending.suggestedKey } }
+        );
+        if (eventResult.modifiedCount > 0 && !isRealMetricKey) {
+          modifiedCount += eventResult.modifiedCount;
+        }
+      }
 
       if (modifiedCount > 0) {
         // Bump the target metric's frequencyScore by however many events moved
@@ -104,10 +122,12 @@ export async function POST(req: NextRequest) {
         );
 
         // Delete the orphaned source metric (it has no events anymore)
-        await MetricModel.deleteOne({
-          userId,
-          metricKey: pending.rawKey,
-        });
+        if (isRealMetricKey) {
+          await MetricModel.deleteOne({
+            userId,
+            metricKey: pending.rawKey,
+          });
+        }
       }
 
       // Invalidate all affected caches
@@ -130,6 +150,25 @@ export async function POST(req: NextRequest) {
         },
         { upsert: true }
       );
+
+      // Create the standalone metric now (was deferred during event creation)
+      const eventCount = await EventModel.countDocuments({ userId, metricKey: pending.rawKey });
+      if (eventCount > 0) {
+        await MetricModel.findOneAndUpdate(
+          { userId, metricKey: pending.rawKey },
+          {
+            $setOnInsert: {
+              displayName: pending.rawKey.charAt(0).toUpperCase() + pending.rawKey.slice(1),
+              valueType: 'number',
+              unit: null,
+              aggregation: 'sum',
+              pinned: false,
+            },
+            $set: { frequencyScore: eventCount },
+          },
+          { upsert: true }
+        );
+      }
     }
 
     await PendingAliasModel.findByIdAndUpdate(pendingId, {
