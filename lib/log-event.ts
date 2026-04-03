@@ -1,13 +1,6 @@
 import { connectDB } from '@/lib/mongodb';
 import { cache } from '@/lib/cache';
-import {
-  parseLogInput,
-  parseLogInputMulti,
-  parseAtSyntax,
-  getMetricDisplayName,
-  findMetric,
-  KNOWN_METRICS,
-} from '@/lib/parser';
+import { parseLogInput, parseLogInputMulti, parseAtSyntax, getMetricDisplayName, findMetric } from '@/lib/parser';
 import { toLocalDateString } from '@/lib/timezone';
 import { aiResolveAlias, aiExtractMetrics, aiExtractContext, getUserMetricKeys } from '@/lib/ai';
 import EventModel from '@/models/Event';
@@ -240,7 +233,6 @@ export async function logEvent(
     if (factor !== undefined) {
       finalValue = Math.round(parsed.value * factor * 100) / 100;
       finalUnit = metricExpectedUnit;
-      console.log(`[events] unit conversion: ${parsed.value} ${parsed.unit} → ${finalValue} ${finalUnit}`);
     }
   }
 
@@ -258,25 +250,32 @@ export async function logEvent(
     unit: finalUnit,
   });
 
-  await MetricModel.findOneAndUpdate(
-    { userId, metricKey: resolvedKey },
-    {
-      $setOnInsert: {
-        displayName: known?.displayName ?? getMetricDisplayName(resolvedKey),
-        valueType: parsed.valueType,
-        unit: finalUnit,
-        aggregation: known?.aggregation ?? inferAggregation(parsed.valueType, finalUnit),
-        pinned: false,
-      },
-      $inc: { frequencyScore: 1 },
-    },
-    { upsert: true, new: true }
-  );
+  // Skip metric creation for unknown keys — AI will suggest an alias.
+  // The metric will be created when the user confirms (merge into target)
+  // or rejects (keep as standalone) the alias suggestion.
+  const willTriggerAI = !known && !cachedAlias;
 
-  await MetricModel.findOneAndUpdate(
-    { userId, metricKey: resolvedKey, frequencyScore: { $gte: 3 }, pinned: false, userUnpinned: { $ne: true } },
-    { $set: { pinned: true } }
-  );
+  if (!willTriggerAI) {
+    await MetricModel.findOneAndUpdate(
+      { userId, metricKey: resolvedKey },
+      {
+        $setOnInsert: {
+          displayName: known?.displayName ?? getMetricDisplayName(resolvedKey),
+          valueType: parsed.valueType,
+          unit: finalUnit,
+          aggregation: known?.aggregation ?? inferAggregation(parsed.valueType, finalUnit),
+          pinned: false,
+        },
+        $inc: { frequencyScore: 1 },
+      },
+      { upsert: true, new: true }
+    );
+
+    await MetricModel.findOneAndUpdate(
+      { userId, metricKey: resolvedKey, frequencyScore: { $gte: 3 }, pinned: false, userUnpinned: { $ne: true } },
+      { $set: { pinned: true } }
+    );
+  }
 
   await cache.del(`analytics:${userId}:${resolvedKey}`);
   await cache.del(`metrics:pinned:${userId}`);
@@ -298,14 +297,6 @@ export async function logEvent(
     if (backgroundFn) {
       backgroundFn(bgWork);
     }
-
-    console.log(
-      isSentence
-        ? `[events] unknown sentence, scheduling extraction: "${rawText}"`
-        : `[events] unknown token "${resolvedKey}", scheduling alias resolution`
-    );
-  } else {
-    console.log(`[events] known metric "${resolvedKey}" — skipping AI`);
   }
 
   return { ok: true, event: event.toObject() as unknown as IEvent };
@@ -325,72 +316,41 @@ async function triggerAIResolution(rawKey: string, userId: string) {
       { suggestedKey: result.match, confidence: result.confidence, status: 'pending' },
       { upsert: true }
     );
-    console.log(`[AI] pending alias: "${rawKey}" → "${result.match}" (${result.confidence})`);
   }
 }
 
 // ── triggerMetricExtraction ─────────────────────────────────────────────────
+// Extracts the intended metric from a natural language sentence.
+// Instead of auto-correcting silently, creates a PendingAlias so the user
+// can confirm or reject the suggestion via the UI prompt.
 async function triggerMetricExtraction(eventId: string, rawText: string, currentMetricKey: string, userId: string) {
-  console.log(`[AI] triggerMetricExtraction: "${rawText}"`);
-
-  const extracted = await aiExtractMetrics(rawText, userId);
+  const extracted = await aiExtractMetrics(
+    rawText,
+    userId,
+    currentMetricKey !== '__unknown__' ? currentMetricKey : undefined
+  );
   if (!extracted.length) return;
 
   const best = extracted.reduce((a, b) => (a.confidence > b.confidence ? a : b));
-  if (best.confidence < 0.7 || best.metricKey === currentMetricKey) return;
+  if (best.metricKey === currentMetricKey) return;
+  if (best.confidence < 0.5) return;
 
-  console.log(`[AI] correcting: "${currentMetricKey}" → "${best.metricKey}" (${best.confidence})`);
+  const rawKey = currentMetricKey !== '__unknown__' ? currentMetricKey : rawText.trim().toLowerCase();
 
-  const known = KNOWN_METRICS.find((m) => m.key === best.metricKey);
-
-  const resolvedUnit = best.unit ?? known?.unit ?? null;
-  const resolvedValueType = known?.type ?? (best.value !== null ? 'number' : 'boolean');
-  const resolvedValue = best.value !== null ? best.value : resolvedValueType === 'boolean' ? true : null;
-
-  await EventModel.findByIdAndUpdate(eventId, {
-    $set: {
-      metricKey: best.metricKey,
-      valueType: resolvedValueType,
-      ...(resolvedValue !== null ? { value: resolvedValue } : {}),
-      ...(resolvedUnit !== null ? { unit: resolvedUnit } : {}),
-    },
-  });
-
-  await MetricModel.findOneAndUpdate(
-    { userId, metricKey: best.metricKey },
+  // Create a PendingAlias for the user to confirm — don't auto-correct
+  await PendingAliasModel.findOneAndUpdate(
+    { rawKey, userId, status: 'pending' },
     {
-      $setOnInsert: {
-        displayName: known?.displayName ?? getMetricDisplayName(best.metricKey),
-        valueType: resolvedValueType,
-        unit: resolvedUnit,
-        aggregation: known?.aggregation ?? inferAggregation(resolvedValueType, resolvedUnit),
-        pinned: false,
-      },
-      $inc: { frequencyScore: 1 },
+      suggestedKey: best.metricKey,
+      confidence: best.confidence,
+      status: 'pending',
+      ...(eventId ? { eventId } : {}),
     },
-    { upsert: true, new: true }
+    { upsert: true }
   );
 
-  if (currentMetricKey !== '__unknown__') {
-    await AliasModel.findOneAndUpdate(
-      { rawKey: currentMetricKey.toLowerCase(), userId },
-      { canonicalKey: best.metricKey, createdBy: 'ai', confidence: best.confidence },
-      { upsert: true }
-    );
-  }
-
-  if (currentMetricKey !== '__unknown__') {
-    await MetricModel.deleteOne({ userId, metricKey: currentMetricKey, frequencyScore: { $lte: 1 } });
-  }
-
-  await Promise.all([
-    cache.del(`alias:${userId}:${currentMetricKey}`),
-    cache.del(`analytics:${userId}:${currentMetricKey}`),
-    cache.del(`metrics:pinned:${userId}`),
-    cache.invalidateMetricKeys(userId),
-  ]);
-
-  aiExtractContext(rawText, best.metricKey, userId)
+  // Still extract context (sentiment, tags, notes) in the background
+  aiExtractContext(rawText, currentMetricKey, userId)
     .then(async (ctx: { sentiment: string; tags: string[]; note: string | null }) => {
       if (ctx.sentiment !== 'neutral' || ctx.tags.length > 0 || ctx.note) {
         await EventModel.findByIdAndUpdate(eventId, {

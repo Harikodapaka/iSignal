@@ -75,7 +75,7 @@ export function PendingAliasPrompt({ triggerRefetch }: { triggerRefetch?: number
       {pending.map((p) => (
         <Box
           key={p._id}
-          p="md"
+          p="sm"
           style={{
             background: 'var(--blue-tint)',
             border: '1px solid var(--blue)',
@@ -83,8 +83,8 @@ export function PendingAliasPrompt({ triggerRefetch }: { triggerRefetch?: number
             borderLeft: '3px solid var(--blue)',
           }}
         >
-          <Group justify="space-between" wrap="nowrap">
-            <Group gap="xs" style={{ flex: 1, minWidth: 0 }}>
+          <Stack gap="xs">
+            <Group gap="xs" wrap="wrap">
               <IconSparkles size={16} color="var(--blue)" style={{ flexShrink: 0 }} />
               <Text size="sm" style={{ color: 'var(--text-primary)' }}>
                 <Text span fw={700} style={{ color: 'var(--blue)' }}>
@@ -100,7 +100,7 @@ export function PendingAliasPrompt({ triggerRefetch }: { triggerRefetch?: number
                 {Math.round(p.confidence * 100)}% sure
               </Badge>
             </Group>
-            <Group gap="xs" style={{ flexShrink: 0 }}>
+            <Group gap="xs">
               <Button size="xs" radius="xl" color="blue" onClick={() => respond(p._id, 'confirm')}>
                 Yes, always
               </Button>
@@ -108,7 +108,7 @@ export function PendingAliasPrompt({ triggerRefetch }: { triggerRefetch?: number
                 No, keep it
               </Button>
             </Group>
-          </Group>
+          </Stack>
         </Box>
       ))}
     </Stack>

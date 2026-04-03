@@ -409,7 +409,7 @@ export default function TodayPage() {
                     animationDelay: `${i * 0.04}s`,
                   }}
                 >
-                  <Group gap="sm">
+                  <Group gap="sm" style={{ flex: 1, minWidth: 0 }}>
                     <Box
                       style={{
                         width: 7,
@@ -417,29 +417,39 @@ export default function TodayPage() {
                         borderRadius: '50%',
                         background: color,
                         flexShrink: 0,
+                        marginTop: 6,
+                        alignSelf: 'flex-start',
                       }}
                     />
-                    <Box>
-                      <Group gap={6}>
-                        <Text size="sm">{emoji}</Text>
+                    <Box style={{ flex: 1, minWidth: 0 }}>
+                      <Group gap={6} wrap="nowrap">
+                        <Text size="sm" style={{ flexShrink: 0 }}>
+                          {emoji}
+                        </Text>
                         <Text
                           size="sm"
                           fw={600}
                           style={{
                             color: 'var(--text-primary)',
+                            whiteSpace: 'nowrap',
                           }}
                         >
                           {event.metricKey}
                         </Text>
-                        {event.tags?.map((tag) => (
-                          <Badge key={tag} size="xs" variant="light" color="gray" radius="sm">
-                            {tag}
-                          </Badge>
-                        ))}
                       </Group>
+                      {event.tags && event.tags.length > 0 && (
+                        <Group gap={4} mt={2} wrap="wrap">
+                          {event.tags.map((tag) => (
+                            <Badge key={tag} size="xs" variant="light" color="gray" radius="sm">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </Group>
+                      )}
                       <Text
                         size="xs"
                         ff="monospace"
+                        truncate
                         style={{
                           color: 'var(--text-muted)',
                         }}
@@ -451,6 +461,7 @@ export default function TodayPage() {
                   <Box
                     style={{
                       textAlign: 'right',
+                      flexShrink: 0,
                     }}
                   >
                     <Text
