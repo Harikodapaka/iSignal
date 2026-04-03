@@ -11,6 +11,7 @@ import {
   CONTEXT_OVERRIDES,
   HALF_PATTERN,
   HALF_PLACEHOLDER,
+  NUMBER_WORDS,
 } from '@/lib/parser-constants';
 
 export { KNOWN_METRICS } from '@/lib/metrics';
@@ -226,6 +227,11 @@ function parseSingleSegment(trimmed: string, userMetricKeys: string[] = []): Log
     if (numUnit) {
       value = parseFloat(numUnit[1]);
       unit = UNIT_MAP[numUnit[2]] ?? numUnit[2];
+      continue;
+    }
+    // Number words: "one" → 1, "two" → 2, etc.
+    if (NUMBER_WORDS[token] !== undefined) {
+      value = NUMBER_WORDS[token];
       continue;
     }
     // Fix #1: If token is both a unit AND a metric alias, treat as metric key (not unit)

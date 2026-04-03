@@ -52,66 +52,62 @@ export async function POST(req: NextRequest) {
       Array.from(byUser.entries()).map(async ([userId, userSubs]) => {
         // Use the timezone from the first subscription
         const tz = (userSubs[0].timezone as string) || 'UTC';
-        const window = getNotificationWindow(tz);
-
-        if (!window) {
-          skipped += userSubs.length;
-          return; // Not time for any notification in this timezone
-        }
-
-        // Check if already notified in this window today
         const today = toLocalDateString(tz);
-        const notifiedKey = `${window}:${today}`;
-        const lastNotified = (userSubs[0].lastNotifiedAt as Record<string, string>) || {};
+        const localHour = getLocalHour(tz);
 
-        if (lastNotified[notifiedKey]) {
-          skipped += userSubs.length;
-          return; // Already sent this window today
-        }
+        // ── Window-based notifications (morning/midday/evening) ──
+        const window = getNotificationWindow(tz);
+        if (window) {
+          const notifiedKey = `${window}:${today}`;
+          const lastNotified = (userSubs[0].lastNotifiedAt as Record<string, string>) || {};
 
-        // Build notification context
-        const ctx = await buildNotificationContext(userId, tz);
+          if (!lastNotified[notifiedKey]) {
+            // Build notification context
+            const ctx = await buildNotificationContext(userId, tz);
 
-        // Pick the right message based on window
-        let message;
-        switch (window) {
-          case 'morning':
-            message = getMorningMessage(ctx);
-            break;
-          case 'midday':
-            message = getMiddayMessage(ctx);
-            break;
-          case 'evening':
-            message = getEveningMessage(ctx);
-            break;
-        }
+            // Pick the right message based on window
+            let message;
+            switch (window) {
+              case 'morning':
+                message = getMorningMessage(ctx);
+                break;
+              case 'midday':
+                message = getMiddayMessage(ctx);
+                break;
+              case 'evening':
+                message = getEveningMessage(ctx);
+                break;
+            }
 
-        // Send to all of this user's subscriptions
-        for (const sub of userSubs) {
-          const result = await sendPush(
-            {
-              endpoint: sub.endpoint as string,
-              keys: sub.keys as { p256dh: string; auth: string },
-            },
-            message
-          );
+            // Send to all of this user's subscriptions
+            for (const sub of userSubs) {
+              const result = await sendPush(
+                {
+                  endpoint: sub.endpoint as string,
+                  keys: sub.keys as { p256dh: string; auth: string },
+                },
+                message
+              );
 
-          if (result === 'sent') {
-            sent++;
-            // Mark as notified
-            await PushSubscription.updateOne(
-              { _id: sub._id },
-              { $set: { [`lastNotifiedAt.${notifiedKey}`]: new Date() } }
-            );
-          } else if (result === 'gone') {
-            // Subscription expired — clean up
-            await PushSubscription.deleteOne({ _id: sub._id });
-            cleaned++;
+              if (result === 'sent') {
+                sent++;
+                // Mark as notified
+                await PushSubscription.updateOne(
+                  { _id: sub._id },
+                  { $set: { [`lastNotifiedAt.${notifiedKey}`]: new Date() } }
+                );
+              } else if (result === 'gone') {
+                // Subscription expired — clean up
+                await PushSubscription.deleteOne({ _id: sub._id });
+                cleaned++;
+              }
+            }
+          } else {
+            skipped += userSubs.length;
           }
         }
 
-        // ── Per-metric reminders (manual) ──
-        const localHour = getLocalHour(tz);
+        // ── Per-metric reminders (manual) — runs independently of window ──
         const metricsWithReminders = await MetricModel.find({
           userId,
           'reminder.enabled': true,
@@ -239,13 +235,50 @@ export async function POST(req: NextRequest) {
     // Count errors
     const errors = results.filter((r) => r.status === 'rejected').length;
 
-    console.log(`[cron/notifications] sent=${sent} skipped=${skipped} cleaned=${cleaned} errors=${errors}`);
+    // ── Prune stale lastNotifiedAt keys (older than PRUNE_DAYS) ──
+    // Keys follow patterns: "morning:2026-03-25", "metric:water:9:2026-03-25", etc.
+    // We only need recent entries for dedup; old ones waste storage.
+    // Only run once per day (UTC hour 0) to avoid unnecessary DB reads every hour.
+    const PRUNE_DAYS = 3;
+    let pruned = 0;
+    const utcHour = new Date().getUTCHours();
+    if (utcHour === 0) {
+      try {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - PRUNE_DAYS);
+        const cutoffStr = cutoff.toISOString().split('T')[0]; // "YYYY-MM-DD"
+
+        const allSubs = await PushSubscription.find({}).select('lastNotifiedAt').lean();
+        for (const sub of allSubs) {
+          const notifiedAt = (sub.lastNotifiedAt as Record<string, unknown>) || {};
+          const staleKeys = Object.keys(notifiedAt).filter((key) => {
+            // Extract date from key — always the last segment matching YYYY-MM-DD
+            const dateMatch = key.match(/(\d{4}-\d{2}-\d{2})(?:$|[^0-9])/);
+            return dateMatch ? dateMatch[1] < cutoffStr : false;
+          });
+
+          if (staleKeys.length > 0) {
+            const unsetFields: Record<string, 1> = {};
+            for (const k of staleKeys) unsetFields[`lastNotifiedAt.${k}`] = 1;
+            await PushSubscription.updateOne({ _id: sub._id }, { $unset: unsetFields });
+            pruned += staleKeys.length;
+          }
+        }
+      } catch (err) {
+        console.error('[cron/notifications] Prune error:', err);
+      }
+    }
+
+    console.log(
+      `[cron/notifications] sent=${sent} skipped=${skipped} cleaned=${cleaned} pruned=${pruned} errors=${errors}`
+    );
 
     return NextResponse.json({
       success: true,
       sent,
       skipped,
       cleaned,
+      pruned,
       errors,
     });
   } catch (error) {
