@@ -117,6 +117,26 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Weekday vs weekend averages (pre-computed so AI doesn't guess from dates)
+      let weekdayAvg: number | null = null;
+      let weekendAvg: number | null = null;
+      if (m.valueType === 'number') {
+        const weekdayVals: number[] = [];
+        const weekendVals: number[] = [];
+        for (const d of current.dailyValues) {
+          if (typeof d.value !== 'number') continue;
+          const dayIdx = new Date(d.date + 'T12:00:00').getDay();
+          if (dayIdx === 0 || dayIdx === 6) weekendVals.push(d.value);
+          else weekdayVals.push(d.value);
+        }
+        weekdayAvg = weekdayVals.length
+          ? Math.round((weekdayVals.reduce((a, b) => a + b, 0) / weekdayVals.length) * 10) / 10
+          : null;
+        weekendAvg = weekendVals.length
+          ? Math.round((weekendVals.reduce((a, b) => a + b, 0) / weekendVals.length) * 10) / 10
+          : null;
+      }
+
       // Streak: consecutive days logged (from most recent backward)
       const allDates = current.uniqueDates.sort().reverse();
       let streak = 0;
@@ -148,6 +168,8 @@ export async function POST(req: NextRequest) {
         skippedDays: skippedDays.length <= 3 ? skippedDays : `${skippedDays.length} days`,
         bestDay,
         worstDay,
+        weekdayAvg,
+        weekendAvg,
         // Keep raw daily values compact for AI
         dailyValues: current.dailyValues,
       };

@@ -73,7 +73,6 @@ export const NOISE_WORDS = new Set([
   'some', 'any', 'all', 'few', 'many', 'much', 'more', 'less',
   'bit', 'little', 'lot', 'lots', 'enough', 'half', 'whole',
   'couple', 'several', 'multiple', 'bunch',
-  'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
   // time words
   'today', 'tonight', 'yesterday', 'tomorrow',
   'now', 'later', 'soon', 'already', 'still', 'again',
@@ -216,6 +215,14 @@ export const CONTEXT_OVERRIDES: { pattern: RegExp; metricKey: string; blockKeys?
     blockKeys: ['workout'],
   },
 ];
+
+// ── Number words → numeric values ───────────────────────────────────────────
+// "one glass of water" → value=1, "two cups of coffee" → value=2
+export const NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12,
+};
 
 // ── Multi-metric splitter constants ─────────────────────────────────────────
 // Fix #4: Preserves "and a half" — don't split when "and" is part of a fractional value.

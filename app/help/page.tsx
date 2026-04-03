@@ -149,11 +149,11 @@ export default function PublicHelpPage() {
               Type anything into the log bar and press Enter. iSignal understands natural language.
             </Text>
             <Stack gap={0}>
+              <Row label={<Code>I drank 1.5L water</Code>} desc="Natural sentence — AI extracts the metric" />
               <Row label={<Code>sleep 7.5</Code>} desc="Logs 7.5 hours of sleep" />
               <Row label={<Code>workout</Code>} desc="Logs a boolean workout (done / not done)" />
               <Row label={<Code>mood 8</Code>} desc="Logs mood score of 8" />
               <Row label={<Code>protein 142g</Code>} desc="Logs 142g protein — unit parsed automatically" />
-              <Row label={<Code>drank 1.5L water</Code>} desc="Natural sentence — AI extracts the metric" />
               <Row
                 label={<Code style={{ whiteSpace: 'nowrap' }}>felt great after meditation</Code>}
                 desc="AI resolves to 'meditation' and extracts positive sentiment"

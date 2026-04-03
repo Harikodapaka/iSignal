@@ -420,6 +420,8 @@ Data includes per-metric stats with:
 - bestDay/worstDay: best and worst day with date and day name
 - skippedDays: day-of-week they tend to miss
 - mostActiveDay: day they log most often
+- weekdayAvg: average value on Mon-Fri (pre-computed, use as-is)
+- weekendAvg: average value on Sat-Sun (pre-computed, use as-is)
 
 Data: ${JSON.stringify(weeklyData)}
 
@@ -430,7 +432,8 @@ Rules:
 - Call out patterns: "You tend to skip workout on Mondays and Fridays"
 - Call out streaks if notable: "12-day workout streak — your longest!"
 - If a metric dropped, note it honestly but kindly
-- The "oneThingToImprove" must be ULTRA specific: not "drink more water" but "You averaged 1.8L on weekdays vs 2.6L on weekends. Try keeping a bottle at your desk"
+- When comparing weekday vs weekend, ONLY use the provided weekdayAvg and weekendAvg numbers. NEVER calculate or guess these yourself. If both are provided and differ meaningfully, mention the pattern.
+- The "oneThingToImprove" must be ULTRA specific and reference actual numbers from the data. Never fabricate or guess numbers.
 - Keep highlights to 3-4 bullet points max
 - Be warm but not sycophantic. Skip "amazing work!" filler
 
